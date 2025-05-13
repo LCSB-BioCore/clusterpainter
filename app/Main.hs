@@ -1,75 +1,108 @@
 {-# LANGUAGE OverloadedStrings #-}
 
+import Control.Exception (bracket, bracket_)
+import Control.Monad (unless, void, when)
+import Control.Monad.IO.Class ()
+import Data.IORef
+import qualified Data.Set as S
+import qualified Data.Vector as V
 import DearImGui
 import DearImGui.OpenGL3
 import DearImGui.SDL
 import DearImGui.SDL.OpenGL
 import Graphics.GL
-import SDL
-
-import Control.Exception (bracket, bracket_)
-import Control.Monad (unless, when)
-import Control.Monad.IO.Class ()
-import Control.Monad.Managed
-
-import qualified Graphics.Gloss as G
 import Graphics.Gloss.Data.Color
 import Graphics.Gloss.Rendering
+import SDL
 
+type Ve = V.Vector
+
+data AppState = St
+  { items :: Ve Item
+  , featureNames :: Ve String
+  , groupNames :: Ve String
+  , groupsSyncFile :: FilePath
+  } deriving (Show)
+
+data Item = Item
+  { position :: (Float, Float)
+  , features :: Ve Float
+  , featMeans :: Ve Float
+  , featVars :: Ve Float
+  , selected :: Bool
+  , groups :: S.Set Int
+  } deriving (Show)
+
+processOpts :: IO AppState
+processOpts = undefined
+
+renderApp xs ys appst = Circle . fromIntegral <$> readIORef (appst :: IORef Int)
+
+onEvent (WindowResizedEvent r) _ =
+  let V2 w h = windowResizedEventSize r
+   in glViewport 0 0 w h
+onEvent _ _ = pure ()
+
+drawUI appst = do
+  showDemoWindow
+  withWindowOpen "Data input" $ do
+    text "Hello, ImGui!"
+    button "clickety clicky" >>= \c -> when c $ putStrLn "Ow!"
+    void $ sliderInt "haha" (appst :: IORef Int) 0 100
+  {-
+  withWindowOpen "Display" $ do
+    pure ()
+  withWindowOpen "Clustering" $ do
+    pure ()
+  -}
+
+--TODO make a custom wrap for StateVar that has IORef in it, produce "zoom" etc. Multiple IORefs might need to be produced for each level of the structure.
+----------
 main :: IO ()
 main = do
   initializeAll
-  runManaged $ do
-    window <-
-      do
-        let title = "Hello, Dear ImGui!"
-        let config =
-              defaultWindow
-                { windowGraphicsContext = OpenGLContext defaultOpenGL
-                , windowResizable = True
-                }
-        managed $ bracket (createWindow title config) destroyWindow
-    glContext <- managed $ bracket (glCreateContext window) glDeleteContext
-    _ <- managed $ bracket createContext destroyContext
-    managed_ $ bracket_ (sdl2InitForOpenGL window glContext) sdl2Shutdown
-    managed_ $ bracket_ openGL3Init openGL3Shutdown
-    st <- liftIO $ initState
-    liftIO $ mainLoop st window
+  appst <- newIORef (0 :: Int)
+  let title = "brushsom"
+  let config =
+        defaultWindow
+          { windowGraphicsContext = OpenGLContext defaultOpenGL
+          , windowResizable = True
+          }
+  bracket (createWindow title config) destroyWindow $ \window ->
+    bracket (glCreateContext window) glDeleteContext $ \glContext ->
+      bracket createContext destroyContext $ \_ ->
+        bracket_ (sdl2InitForOpenGL window glContext) sdl2Shutdown
+          $ bracket_ openGL3Init openGL3Shutdown
+          $ do
+              st <- initState
+              mainLoop appst st window
 
-mainLoop :: State -> Window -> IO ()
-mainLoop st window = do
-  finished <- handleEvents
-  unless finished $ do
-    -- start frame
-    openGL3NewFrame
-    sdl2NewFrame
-    newFrame
-    -- rendering
-    (V2 wsx wsy) <- fmap fromIntegral <$> get (windowSize window)
-    displayPicture (wsx, wsy) (greyN 0.25) st 1.0 (Circle 30)
-    -- UI
-    withWindowOpen "Hello, ImGui!" mainWidget
-    showDemoWindow
-    -- UI rendering
-    render
-    openGL3RenderDrawData =<< getDrawData
-    -- post-frame
-    glSwapWindow window
-    mainLoop st window
+--mainLoop :: AppState -> State -> Window -> IO ()
+mainLoop appst st window = loop
   where
+    loop = do
+      finished <- handleEvents
+      unless finished $ do
+        -- start frame
+        openGL3NewFrame
+        sdl2NewFrame
+        newFrame
+        -- rendering
+        (V2 wsx wsy) <- fmap fromIntegral <$> get (windowSize window)
+        renderApp wsx wsy appst
+          >>= displayPicture (wsx, wsy) (greyN 0.25) st 1.0
+        -- UI
+        drawUI appst
+        -- UI rendering
+        render
+        openGL3RenderDrawData =<< getDrawData
+        -- post-frame
+        glSwapWindow window
+        loop
     handleEvents = do
       ev' <- pollEventWithImGui
       case ev' of
         Nothing -> return False
         Just ev
           | eventPayload ev == QuitEvent -> return True
-          | otherwise -> onEvent (eventPayload ev) >> return False
-    onEvent (WindowResizedEvent r) =
-      let V2 w h = windowResizedEventSize r
-       in glViewport 0 0 w h
-    onEvent _ = pure ()
-
-mainWidget :: IO ()
-mainWidget = do
-  text "Hello, ImGui!"
-  button "clickety clicky" >>= \c -> when c $ putStrLn "Ow!"
+          | otherwise -> onEvent (eventPayload ev) appst >> return False
