@@ -15,28 +15,10 @@ import Graphics.Gloss.Data.Color
 import Graphics.Gloss.Rendering
 import SDL
 
-type Ve = V.Vector
+import St
+import Config
 
-data AppState = St
-  { items :: Ve Item
-  , featureNames :: Ve String
-  , groupNames :: Ve String
-  , groupsSyncFile :: FilePath
-  } deriving (Show)
-
-data Item = Item
-  { position :: (Float, Float)
-  , features :: Ve Float
-  , featMeans :: Ve Float
-  , featVars :: Ve Float
-  , selected :: Bool
-  , groups :: S.Set Int
-  } deriving (Show)
-
-processOpts :: IO AppState
-processOpts = undefined
-
-renderApp xs ys appst = Circle . fromIntegral <$> readIORef (appst :: IORef Int)
+renderApp xs ys appst = pure $ Circle 30
 
 onEvent (WindowResizedEvent r) _ =
   let V2 w h = windowResizedEventSize r
@@ -48,7 +30,7 @@ drawUI appst = do
   withWindowOpen "Data input" $ do
     text "Hello, ImGui!"
     button "clickety clicky" >>= \c -> when c $ putStrLn "Ow!"
-    void $ sliderInt "haha" (appst :: IORef Int) 0 100
+    --void $ sliderInt "haha" (appst :: IORef Int) 0 100
   {-
   withWindowOpen "Display" $ do
     pure ()
@@ -61,7 +43,7 @@ drawUI appst = do
 main :: IO ()
 main = do
   initializeAll
-  appst <- newIORef (0 :: Int)
+  appst <- processOpts >>= newIORef
   let title = "Cluster painter"
   let config =
         defaultWindow

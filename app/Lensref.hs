@@ -6,6 +6,9 @@ import Data.IORef
 
 import Lens.Micro
 
+withVal :: IORef a -> (a -> IO b) -> IO b
+withVal r io = readIORef r >>= io
+
 withRef :: a -> (IORef a -> IO b) -> IO (a, b)
 withRef a io = do
   r <- newIORef a

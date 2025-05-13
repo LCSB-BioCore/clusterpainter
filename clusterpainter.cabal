@@ -22,11 +22,15 @@ common warnings
 executable clusterpainter
   import:           warnings
   main-is:          Main.hs
-  other-modules:    Lensref
+  other-modules:
+    Config
+    Lensref
+    St
 
   autogen-modules:  Paths_clusterpainter
   other-modules:    Paths_clusterpainter
   build-depends:
+    , aeson
     , base
     , containers
     , dear-imgui
@@ -35,6 +39,7 @@ executable clusterpainter
     , microlens
     , microlens-th
     , OpenGLRaw
+    , optparse-applicative
     , sdl2
     , vector
 
