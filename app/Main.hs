@@ -62,7 +62,7 @@ main :: IO ()
 main = do
   initializeAll
   appst <- newIORef (0 :: Int)
-  let title = "brushsom"
+  let title = "Cluster painter"
   let config =
         defaultWindow
           { windowGraphicsContext = OpenGLContext defaultOpenGL

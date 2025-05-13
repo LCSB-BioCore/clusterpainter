@@ -1,5 +1,5 @@
 cabal-version:   3.0
-name:            brushsom
+name:            clusterpainter
 version:         0.1.0.0
 
 -- synopsis:
@@ -19,12 +19,13 @@ extra-doc-files: CHANGELOG.md
 common warnings
   ghc-options: -Wall
 
-executable brushsom
+executable clusterpainter
   import:           warnings
   main-is:          Main.hs
   other-modules:    Lensref
 
-  -- other-extensions:
+  autogen-modules:  Paths_clusterpainter
+  other-modules:    Paths_clusterpainter
   build-depends:
     , base
     , containers
