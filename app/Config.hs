@@ -221,7 +221,8 @@ processOpts = do
       { featureNames = V.fromList $ fsFeatures fst
       , groupNames = V.fromList $ fsGroups fst
       , syncOutFile = outFile o
-      , clusters = V.fromList $ zipClusters projs ws fs ms vs (fsClusterGroups fst)
+      , clusters =
+          V.fromList $ zipClusters projs ws fs ms vs (fsClusterGroups fst)
       }
 
 zipClusters (p:ps) (w:ws) (f:fs) (m:ms) (v:vs) (g:gs) =

@@ -15,8 +15,8 @@ import Graphics.Gloss.Data.Color
 import Graphics.Gloss.Rendering
 import SDL
 
-import St
 import Config
+import St
 
 renderApp xs ys appst = pure $ Circle 30
 
