@@ -27,6 +27,7 @@ renderApp xs ys appst = withVal appst $ \st -> pure (greyN 0.2, pic st)
         $ V.toList
         $ clusters st
 
+onEvent (MouseButtonEvent b) _ = print b
 onEvent _ _ = pure ()
 
 drawUI appst = do

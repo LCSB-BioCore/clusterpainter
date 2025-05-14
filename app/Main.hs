@@ -62,13 +62,29 @@ mainLoop appst st window = loop
       ev' <- pollEventWithImGui
       case ev' of
         Nothing -> return False
-        Just ev
-          | QuitEvent <- eventPayload ev -> return True
-          | WindowResizedEvent r <- eventPayload ev -> do
-            let V2 w h = windowResizedEventSize r
-            glViewport 0 0 w h
-            onEvent (eventPayload ev) appst
-            handleEvents
-          | otherwise -> do
-            onEvent (eventPayload ev) appst
-            handleEvents
+        Just ev ->
+          let ep = eventPayload ev
+           in case ep of
+                QuitEvent -> return True
+                MouseMotionEvent _ -> mouseEvent ep
+                MouseButtonEvent _ -> mouseEvent ep
+                MouseWheelEvent _ -> mouseEvent ep
+                KeyboardEvent _ -> kbEvent ep
+                TextEditingEvent _ -> kbEvent ep
+                TextInputEvent _ -> kbEvent ep
+                WindowResizedEvent r -> do
+                  let V2 w h = windowResizedEventSize r
+                  glViewport 0 0 w h
+                  onEvent ep appst
+                  handleEvents
+                _ -> do
+                  onEvent ep appst
+                  handleEvents
+    mouseEvent ep = do
+      captured <- wantCaptureMouse
+      unless captured $ onEvent ep appst
+      handleEvents
+    kbEvent ep = do
+      captured <- wantCaptureKeyboard
+      unless captured $ onEvent ep appst
+      handleEvents
