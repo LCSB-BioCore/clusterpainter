@@ -99,7 +99,8 @@ opts = do
       $ short 'm'
           <> long "means"
           <> metavar "JSON"
-          <> help "read in-cluster mean values from this file"
+          <> help
+               "read in-cluster mean values from this file (if missing, means are assumed identical to the feature values)"
   inputFiles <-
     Right
       <$> strOption
