@@ -16,11 +16,7 @@ extra-doc-files: CHANGELOG.md
 
 -- extra-source-files:
 
-common warnings
-  ghc-options: -Wall
-
 executable clusterpainter
-  import:           warnings
   main-is:          Main.hs
   other-modules:
     Config
@@ -45,4 +41,5 @@ executable clusterpainter
     , vector
 
   hs-source-dirs:   app
+  ghc-options:      -Wall -threaded
   default-language: Haskell2010

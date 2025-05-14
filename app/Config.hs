@@ -13,6 +13,7 @@ import Data.Bool
 import qualified Data.Set as S
 import qualified Data.Vector as V
 import Data.Version (showVersion)
+import DearImGui.Internal.Text
 import GHC.Generics
 import Options.Applicative
 import Paths_clusterpainter (version)
@@ -219,22 +220,23 @@ processOpts = do
         pure FSt {fsClusterGroups = gs, fsFeatures = fns, fsGroups = gns}
   pure
     St
-      { featureNames = V.fromList $ fsFeatures fst
-      , groupNames = V.fromList $ fsGroups fst
-      , syncOutFile = outFile o
-      , clusters =
+      { _featureNames = V.fromList . map pack $ fsFeatures fst
+      , _groupNames = V.fromList . map pack $ fsGroups fst
+      , _syncOutFile = outFile o
+      , _clusters =
           V.fromList $ zipClusters projs ws fs ms vs (fsClusterGroups fst)
+      , _hiFeature = 0
       }
 
 zipClusters (p:ps) (w:ws) (f:fs) (m:ms) (v:vs) (g:gs) =
   Cluster
-    { position = p
-    , weight = w
-    , features = V.fromList f
-    , featMeans = V.fromList m
-    , featVars = V.fromList v
-    , selected = False
-    , groups = S.fromList [i | (b, i) <- zip g [1 ..], b]
+    { _position = p
+    , _weight = w
+    , _features = V.fromList f
+    , _featMeans = V.fromList m
+    , _featVars = V.fromList v
+    , _selected = False
+    , _groups = S.fromList [i | (b, i) <- zip g [1 ..], b]
     }
     : zipClusters ps ws fs ms vs gs
 zipClusters _ _ _ _ _ _ = []

@@ -1,30 +1,40 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TypeFamilies #-}
 
 module St where
 
+import Data.Aeson
 import qualified Data.Set as S
 import qualified Data.Vector as V
-
-import Data.Aeson
+import DearImGui.Internal.Text
+import Lens.Micro
+import Lens.Micro.Internal (Index, IxValue, Ixed)
+import Lens.Micro.TH
 
 type Ve = V.Vector
 
 data AppState = St
-  { clusters :: Ve Cluster
-  , featureNames :: Ve String
-  , groupNames :: Ve String
-  , syncOutFile :: Maybe FilePath
+  { _clusters :: Ve Cluster
+  , _featureNames :: Ve Text
+  , _groupNames :: Ve Text
+  , _syncOutFile :: Maybe FilePath
+  , _hiFeature :: Int
   } deriving (Show)
 
 data Cluster = Cluster
-  { position :: (Float, Float)
-  , weight :: Float
-  , features :: Ve Float
-  , featMeans :: Ve Float
-  , featVars :: Ve Float
-  , selected :: Bool
-  , groups :: S.Set Int
+  { _position :: (Float, Float)
+  , _weight :: Float
+  , _features :: Ve Float
+  , _featMeans :: Ve Float
+  , _featVars :: Ve Float
+  , _selected :: Bool
+  , _groups :: S.Set Int
   } deriving (Show)
+
+makeLenses ''AppState
+
+makeLenses ''Cluster
 
 data FileState = FSt
   { fsClusterGroups :: [[Bool]]

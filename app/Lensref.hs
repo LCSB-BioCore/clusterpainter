@@ -6,8 +6,20 @@ import Data.IORef
 
 import Lens.Micro
 
-withVal :: IORef a -> (a -> IO b) -> IO b
-withVal r io = readIORef r >>= io
+-- TODO: flipping this might be nice
+withVal :: IORef a -> (a -> IO (a, b)) -> IO b
+withVal r io = do
+  (a, b) <- readIORef r >>= io
+  writeIORef r a
+  pure b
+
+withVal_ :: IORef a -> (a -> IO a) -> IO ()
+withVal_ r io = do
+  a <- readIORef r >>= io
+  writeIORef r a
+
+unRef :: IORef a -> (a -> IO b) -> IO b
+unRef r io = readIORef r >>= io
 
 withRef :: a -> (IORef a -> IO b) -> IO (a, b)
 withRef a io = do
