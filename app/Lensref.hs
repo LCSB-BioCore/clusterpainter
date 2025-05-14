@@ -3,7 +3,6 @@
 module Lensref where
 
 import Data.IORef
-
 import Lens.Micro
 
 -- TODO: flipping this might be nice

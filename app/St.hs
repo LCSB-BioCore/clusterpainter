@@ -9,7 +9,6 @@ import qualified Data.Set as S
 import qualified Data.Vector as V
 import DearImGui.Internal.Text
 import Lens.Micro
-import Lens.Micro.Internal (Index, IxValue, Ixed)
 import Lens.Micro.TH
 
 type Ve = V.Vector
