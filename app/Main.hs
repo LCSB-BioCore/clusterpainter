@@ -33,6 +33,7 @@ main = do
           $ bracket_ openGL3Init openGL3Shutdown
           $ do
               st <- initState
+              swapInterval $= LateSwapTearing
               mainLoop appst st window
 
 --mainLoop :: AppState -> State -> Window -> IO ()
@@ -67,7 +68,7 @@ mainLoop appst st window = loop
             let V2 w h = windowResizedEventSize r
             glViewport 0 0 w h
             onEvent (eventPayload ev) appst
-            return False
+            handleEvents
           | otherwise -> do
             onEvent (eventPayload ev) appst
-            return False
+            handleEvents
