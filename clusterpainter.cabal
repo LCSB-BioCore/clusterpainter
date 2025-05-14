@@ -26,6 +26,7 @@ executable clusterpainter
     Config
     Lensref
     St
+    Ui
 
   autogen-modules:  Paths_clusterpainter
   other-modules:    Paths_clusterpainter
