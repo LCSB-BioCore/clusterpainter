@@ -11,6 +11,7 @@ import DearImGui.SDL.OpenGL
 import Graphics.GL
 import Graphics.Gloss.Rendering
 import SDL
+import System.Mem
 
 import Config
 import St
@@ -57,6 +58,7 @@ mainLoop appst st window = loop
         openGL3RenderDrawData =<< getDrawData
         -- post-frame
         glSwapWindow window
+        performGC
         loop
     handleEvents = do
       ev' <- pollEventWithImGui

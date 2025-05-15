@@ -11,7 +11,7 @@ import Control.Monad
 import Data.Aeson
 import Data.Bool
 import qualified Data.Set as S
-import qualified Data.Vector as V
+import qualified Data.Vector.Strict as V
 import Data.Version (showVersion)
 import DearImGui.Internal.Text
 import GHC.Generics

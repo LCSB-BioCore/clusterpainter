@@ -6,7 +6,7 @@ module St where
 
 import Data.Aeson
 import qualified Data.Set as S
-import qualified Data.Vector as V
+import qualified Data.Vector.Strict as V
 import DearImGui.Internal.Text
 import Lens.Micro
 import Lens.Micro.TH
@@ -31,9 +31,9 @@ data Cluster = Cluster
   , _groups :: S.Set Int
   } deriving (Show)
 
-makeLenses ''AppState
+$makeLenses ''AppState
 
-makeLenses ''Cluster
+$makeLenses ''Cluster
 
 data FileState = FSt
   { fsClusterGroups :: [[Bool]]
