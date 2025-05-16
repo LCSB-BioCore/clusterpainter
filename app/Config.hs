@@ -219,24 +219,21 @@ processOpts = do
               pure (gns, gs)
         pure FSt {fsClusterGroups = gs, fsFeatures = fns, fsGroups = gns}
   pure
-    St
+    emptySt
       { _featureNames = V.fromList . map pack $ fsFeatures fst
       , _groupNames = V.fromList . map pack $ fsGroups fst
       , _syncOutFile = outFile o
       , _clusters =
           V.fromList $ zipClusters projs ws fs ms vs (fsClusterGroups fst)
-      , _hiFeature = 0
       }
 
 zipClusters (p:ps) (w:ws) (f:fs) (m:ms) (v:vs) (g:gs) =
-  Cluster
+  emptyCluster
     { _position = p
     , _weight = w
     , _features = V.fromList f
     , _featMeans = V.fromList m
     , _featVars = V.fromList v
-    , _selected = False
-    , _groups = S.fromList [i | (b, i) <- zip g [1 ..], b]
     }
     : zipClusters ps ws fs ms vs gs
 zipClusters _ _ _ _ _ _ = []

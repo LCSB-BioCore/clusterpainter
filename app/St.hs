@@ -18,8 +18,17 @@ data AppState = St
   , _featureNames :: Ve Text
   , _groupNames :: Ve Text
   , _syncOutFile :: Maybe FilePath
-  , _hiFeature :: Int
+  , _hiFeatures :: S.Set Int
   } deriving (Show)
+
+emptySt =
+  St
+    { _clusters = V.empty
+    , _featureNames = V.empty
+    , _groupNames = V.empty
+    , _syncOutFile = Nothing
+    , _hiFeatures = S.empty
+    }
 
 data Cluster = Cluster
   { _position :: (Float, Float)
@@ -27,13 +36,24 @@ data Cluster = Cluster
   , _features :: Ve Float
   , _featMeans :: Ve Float
   , _featVars :: Ve Float
-  , _selected :: Bool
+  , _clusterSelected :: Bool
   , _groups :: S.Set Int
   } deriving (Show)
 
-$makeLenses ''AppState
+emptyCluster =
+  Cluster
+    { _position = (0, 0)
+    , _weight = 0
+    , _features = V.empty
+    , _featMeans = V.empty
+    , _featVars = V.empty
+    , _clusterSelected = False
+    , _groups = S.empty
+    }
 
-$makeLenses ''Cluster
+$(makeLenses ''AppState)
+
+$(makeLenses ''Cluster)
 
 data FileState = FSt
   { fsClusterGroups :: [[Bool]]
