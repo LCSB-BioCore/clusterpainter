@@ -33,8 +33,7 @@ executable clusterpainter
     , dear-imgui
     , gloss
     , gloss-rendering
-    , microlens
-    , microlens-th
+    , lens
     , OpenGLRaw
     , optparse-applicative
     , sdl2

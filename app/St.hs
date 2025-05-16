@@ -4,12 +4,13 @@
 
 module St where
 
+import Control.Lens hiding ((.=))
+import Control.Lens.TH
 import Data.Aeson
 import qualified Data.Set as S
 import qualified Data.Vector.Strict as V
 import DearImGui.Internal.Text
-import Lens.Micro
-import Lens.Micro.TH
+import SDL.Vect
 
 type Ve = V.Vector
 
@@ -31,7 +32,7 @@ emptySt =
     }
 
 data Cluster = Cluster
-  { _position :: (Float, Float)
+  { _position :: V2 Float
   , _weight :: Float
   , _features :: Ve Float
   , _featMeans :: Ve Float
@@ -42,7 +43,7 @@ data Cluster = Cluster
 
 emptyCluster =
   Cluster
-    { _position = (0, 0)
+    { _position = V2 0 0
     , _weight = 0
     , _features = V.empty
     , _featMeans = V.empty

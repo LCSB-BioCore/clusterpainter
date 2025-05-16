@@ -40,19 +40,21 @@ main = do
 --mainLoop :: AppState -> State -> Window -> IO ()
 mainLoop appst st window = loop
   where
+    v2tup (V2 a b) = (a, b)
     loop = do
-      finished <- handleEvents
+      ws0 <- fmap fromIntegral <$> get (windowSize window)
+      finished <- handleEvents ws0
       unless finished $ do
         -- start frame
         openGL3NewFrame
         sdl2NewFrame
         newFrame
         -- rendering
-        (V2 wsx wsy) <- fmap fromIntegral <$> get (windowSize window)
-        renderApp wsx wsy appst >>= \(bg, pic) ->
-          displayPicture (wsx, wsy) bg st 1.0 pic
+        ws <- fmap fromIntegral <$> get (windowSize window)
+        renderApp ws appst >>= \(bg, pic) ->
+          displayPicture (v2tup ws) bg st 1.0 pic
         -- UI
-        drawUI appst
+        drawUI ws appst
         -- UI rendering
         render
         openGL3RenderDrawData =<< getDrawData
@@ -60,33 +62,33 @@ mainLoop appst st window = loop
         glSwapWindow window
         performGC
         loop
-    handleEvents = do
+    handleEvents sz = do
       ev' <- pollEventWithImGui
       case ev' of
         Nothing -> return False
         Just ev ->
           let ep = eventPayload ev
+              next = handleEvents sz
+              mouseEvent = do
+                captured <- wantCaptureMouse
+                unless captured $ onEvent sz ep appst
+                next
+              kbEvent = do
+                captured <- wantCaptureKeyboard
+                unless captured $ onEvent sz ep appst
+                next
            in case ep of
                 QuitEvent -> return True
-                MouseMotionEvent _ -> mouseEvent ep
-                MouseButtonEvent _ -> mouseEvent ep
-                MouseWheelEvent _ -> mouseEvent ep
-                KeyboardEvent _ -> kbEvent ep
-                TextEditingEvent _ -> kbEvent ep
-                TextInputEvent _ -> kbEvent ep
+                MouseMotionEvent _ -> mouseEvent
+                MouseButtonEvent _ -> mouseEvent
+                MouseWheelEvent _ -> mouseEvent
+                KeyboardEvent _ -> kbEvent
+                TextEditingEvent _ -> kbEvent
+                TextInputEvent _ -> kbEvent
                 WindowResizedEvent r -> do
-                  let V2 w h = windowResizedEventSize r
-                  glViewport 0 0 w h
-                  onEvent ep appst
-                  handleEvents
+                  uncurry (glViewport 0 0) . v2tup $ windowResizedEventSize r
+                  onEvent sz ep appst
+                  next
                 _ -> do
-                  onEvent ep appst
-                  handleEvents
-    mouseEvent ep = do
-      captured <- wantCaptureMouse
-      unless captured $ onEvent ep appst
-      handleEvents
-    kbEvent ep = do
-      captured <- wantCaptureKeyboard
-      unless captured $ onEvent ep appst
-      handleEvents
+                  onEvent sz ep appst
+                  next

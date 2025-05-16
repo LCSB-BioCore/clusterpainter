@@ -2,8 +2,8 @@
 
 module Lensref where
 
+import Control.Lens
 import Data.IORef
-import Lens.Micro
 
 -- TODO: flipping this might be nice
 withVal :: IORef a -> (a -> IO (a, b)) -> IO b

@@ -17,6 +17,7 @@ import DearImGui.Internal.Text
 import GHC.Generics
 import Options.Applicative
 import Paths_clusterpainter (version)
+import SDL.Vect
 
 data Shape = Shape
   { projection :: [(Float, Float)]
@@ -166,7 +167,7 @@ processOpts = do
         x <- decodeFile wf
         checkVecSz wf nc x
         pure x
-  projs <- projection <$> decodeFile (topoFile o)
+  projs <- map (uncurry V2) . projection <$> decodeFile (topoFile o)
   checkVecSz (topoFile o) nc projs
   ms <-
     case meansFile o of

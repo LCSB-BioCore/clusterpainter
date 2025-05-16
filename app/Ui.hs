@@ -6,9 +6,12 @@ module Ui where
 import Lensref
 import St
 
+import Control.Applicative
+import Control.Lens
 import Control.Monad (when)
 import Data.Foldable (foldl', for_)
 import Data.IORef
+import Data.Semigroup
 import qualified Data.Set as S
 import qualified Data.Vector.Strict as V
 import DearImGui
@@ -16,27 +19,41 @@ import DearImGui.Internal.Text
 import Graphics.Gloss.Data.Color
 import Graphics.Gloss.Data.Picture hiding (text)
 import Graphics.Gloss.Rendering
-import Lens.Micro
 import SDL
 
 import Debug.Trace
 
 {- projection helpers -}
-both2 f (a, b) (c, d) = (f a c, f b d)
+v2rry f (V2 x y) = f x y
+
+inf = 1 / 0 :: Float
 
 projectionLimits =
   foldl'
-    (\(l, u) c -> (both2 min l (c ^. position), both2 max u (c ^. position)))
-    ((inf, inf), (-inf, -inf))
-  where
-    inf = 1 / 0 :: Float
+    (\(l, u) c -> (liftA2 min l (c ^. position), liftA2 max u (c ^. position)))
+    (pure inf, pure (-inf))
 
-scaleUnscale sx sy st =
-  let ((xmin, ymin), (xmax, ymax)) = st ^. clusters . to projectionLimits
-      xs = xmax - xmin
-      ys = ymax - ymin
+scaleUnscale ::
+     (Integral i) => V2 i -> AppState -> (Picture -> Picture, V2 i -> V2 Float)
+scaleUnscale ss@(V2 sx sy) st =
+  let (vmin, vmax) = st ^. clusters . to projectionLimits
+      s@(V2 xs ys) = vmax - vmin
       sc = min (fromIntegral sx / xs) (fromIntegral sy / ys) * 0.8 --TODO zoom
-   in (Scale sc sc . Translate (-xs / 2) (-ys / 2), \x y -> (0, 0))
+   in ( Scale sc (-sc) . Translate (-xs / 2) (-ys / 2)
+      , \cur -> fmap fromIntegral (cur - (liftA2 div ss 2)) / pure sc + s / 2)
+
+clusterAt pos sz st =
+  getArg . minimum
+    $ Arg inf Nothing
+        : [ Arg d (Just i)
+          | (i, p) <-
+              zip [0 ..] $ st ^.. clusters . to V.toList . each . position
+          , let pp = p - pos
+                d = sum (pp * pp)
+          , d <= 1
+          ]
+  where
+    getArg (Arg _ a) = a
 
 {- coloring helpers -}
 hsv2rgb h s v = (lb + scale * clr 0, lb + scale * clr 2, lb + scale * clr 4)
@@ -67,7 +84,7 @@ picIf False _ = Blank
 
 selColor = Color $ greyN 0.4
 
-paintClusterSel sel = picIf sel $ selColor $ circleSolid 0.75
+paintClusterSel sel = picIf sel $ selColor $ circleSolid 0.71
 
 paintCluster gcols fcols bg sc =
   Pictures
@@ -104,12 +121,16 @@ paintCluster gcols fcols bg sc =
     ]
 
 {- rendering -}
-renderApp' sx sy st =
+renderApp' sz st =
   scale . Pictures
-    $ map (\c -> uncurry translate (c ^. position) $ paintClusterSel True) cs
+    $ map
+        (\c ->
+           v2rry translate (c ^. position)
+             $ paintClusterSel (c ^. clusterSelected))
+        cs
         ++ map
              (\c ->
-                uncurry translate (c ^. position)
+                v2rry translate (c ^. position)
                   $ paintCluster
                       []
                       [ fcolor i (c ^. features . to (V.! i))
@@ -122,19 +143,28 @@ renderApp' sx sy st =
     cs = st ^. clusters . to V.toList
     nfeat = st ^. featureNames . to length . to fromIntegral
     fcolor fid fval = hsvColor (fromIntegral fid / nfeat) 1.0 fval
-    (scale, _) = scaleUnscale sx sy st
+    (scale, _) = scaleUnscale sz st
 
-renderApp sx sy appst =
-  unRef appst $ \st -> pure (greyN 0.2, renderApp' sx sy st)
+renderApp s appst = unRef appst $ \st -> pure (greyN 0.2, renderApp' s st)
 
 {- event processing -}
-onEvent (MouseButtonEvent b) _ = print b
-onEvent _ _ = pure ()
+onEvent sz (MouseButtonEvent b) appst
+  | Pressed <- mouseButtonEventMotion b
+  , ButtonLeft <- mouseButtonEventButton b
+  , P p <- mouseButtonEventPos b =
+    unRef appst $ \st ->
+      let unscale = snd $ scaleUnscale sz st
+       in case clusterAt (unscale p) sz st of
+            Just ci -> do
+              print ci
+              modifyIORef appst $ clusters . ix ci . clusterSelected %~ not
+            _ -> pure ()
+onEvent _ _ _ = pure ()
 
 {- user interface -}
 whenM a b = a >>= flip when b
 
-drawUI appst = do
+drawUI _ appst = do
   showDemoWindow
   withWindowOpen "FPS" $ framerate >>= text . pack . show
   withWindowOpen "Features"
