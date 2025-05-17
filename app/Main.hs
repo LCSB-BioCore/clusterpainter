@@ -11,11 +11,15 @@ import DearImGui.SDL.OpenGL
 import Graphics.GL
 import Graphics.Gloss.Rendering
 import SDL
+import SDL.Raw.Video (getCurrentVideoDriver)
 import System.Mem
 
 import Config
 import St
 import Ui
+
+import Foreign.C.String
+import Foreign.Ptr
 
 main :: IO ()
 main = do
@@ -33,8 +37,14 @@ main = do
         bracket_ (sdl2InitForOpenGL window glContext) sdl2Shutdown
           $ bracket_ openGL3Init openGL3Shutdown
           $ do
+              getCurrentVideoDriver >>= peekCString >>= print
+              glGetString GL_VENDOR >>= peekCString . castPtr >>= print
+              glGetString GL_RENDERER >>= peekCString . castPtr >>= print
+              glGetString GL_VERSION >>= peekCString . castPtr >>= print
+              glGetString GL_SHADING_LANGUAGE_VERSION >>= peekCString . castPtr >>= print
               st <- initState
               swapInterval $= LateSwapTearing
+              renderSetup appst
               mainLoop appst st window
 
 --mainLoop :: AppState -> State -> Window -> IO ()
@@ -51,16 +61,15 @@ mainLoop appst st window = loop
         newFrame
         -- rendering
         ws <- fmap fromIntegral <$> get (windowSize window)
-        renderApp ws appst >>= \(bg, pic) ->
-          displayPicture (v2tup ws) bg st 1.0 pic
+        renderApp ws appst -- >>= \(bg, pic) -> displayPicture (v2tup ws) bg st 1.0 pic
         -- UI
-        drawUI ws appst
+        --drawUI ws appst
         -- UI rendering
         render
-        openGL3RenderDrawData =<< getDrawData
+        --openGL3RenderDrawData =<< getDrawData
         -- post-frame
         glSwapWindow window
-        performGC
+        --performGC
         loop
     handleEvents sz = do
       ev' <- pollEventWithImGui

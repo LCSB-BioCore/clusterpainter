@@ -12,16 +12,16 @@ import Control.Monad (when)
 import Data.Foldable (foldl', for_)
 import Data.IORef
 import Data.Semigroup
+import Data.Bits
 import qualified Data.Set as S
 import qualified Data.Vector.Strict as V
 import DearImGui
 import DearImGui.Internal.Text
+import Graphics.GL
 import Graphics.Gloss.Data.Color
 import Graphics.Gloss.Data.Picture hiding (text)
 import Graphics.Gloss.Rendering
 import SDL
-
-import Debug.Trace
 
 {- projection helpers -}
 v2rry f (V2 x y) = f x y
@@ -84,6 +84,7 @@ picIf False _ = Blank
 
 selColor = Color $ greyN 0.4
 
+{- rendering -}
 paintClusterSel sel = picIf sel $ selColor $ circleSolid 0.71
 
 paintCluster gcols fcols bg sc =
@@ -120,8 +121,7 @@ paintCluster gcols fcols bg sc =
             ]
     ]
 
-{- rendering -}
-renderApp' sz st =
+renderApp'__ sz st =
   scale . Pictures
     $ map
         (\c ->
@@ -145,7 +145,36 @@ renderApp' sz st =
     fcolor fid fval = hsvColor (fromIntegral fid / nfeat) 1.0 fval
     (scale, _) = scaleUnscale sz st
 
-renderApp s appst = unRef appst $ \st -> pure (greyN 0.2, renderApp' s st)
+renderApp__ s appst = unRef appst $ \st -> pure (greyN 0.2, renderApp' s st)
+
+renderSetup st = do
+  glClearColor 0.2 0.2 0.2 1.0
+
+renderApp s appst = unRef appst $ renderApp' s
+
+renderArc degs = do
+  glBeginEnd GL_TRIANGLE_FAN $ do
+    glVertex2f 0 0
+    for_ degs $ (glVertex2f <$> sin <*> cos) . (/180) . (*pi)
+
+renderCircle = renderArc [0,20..360]
+
+renderApp' sz st = do
+  glClear (GL_COLOR_BUFFER_BIT .|. GL_DEPTH_BUFFER_BIT)
+  glLoadIdentity
+  glScalef 0.1 0.1 1
+  for_ [0..39] $ \i -> for_ [0..39] $ \j -> do
+    glColor3f (i/19) (j/19) 0.8
+    glPushPopMatrix $ do
+      glTranslatef i j 0
+      glScalef 0.4 0.4 1
+      renderCircle
+
+{- rendering utils -}
+
+glPushPopMatrix a = glPushMatrix *> a <* glPopMatrix
+
+glBeginEnd t a = glBegin t *> a <* glEnd
 
 {- event processing -}
 onEvent sz (MouseButtonEvent b) appst
