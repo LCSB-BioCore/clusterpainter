@@ -1,4 +1,4 @@
-packages: clusterpainter.cabal
+packages: clusterpainter.cabal, gl/gl.cabal
 
 package clusterpainter
   ghc-options: -O2 -fspecialise-aggressively -fexpose-all-unfoldings

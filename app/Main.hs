@@ -65,10 +65,10 @@ mainLoop appst st window = loop
         ws <- fmap fromIntegral <$> get (windowSize window)
         renderApp ws appst -- >>= \(bg, pic) -> displayPicture (v2tup ws) bg st 1.0 pic
         -- UI
-        --drawUI ws appst
+        drawUI ws appst
         -- UI rendering
         render
-        --openGL3RenderDrawData =<< getDrawData
+        openGL3RenderDrawData =<< getDrawData
         -- post-frame
         glSwapWindow window
         --performGC

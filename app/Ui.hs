@@ -78,6 +78,7 @@ hsv2rgb h s v = (lb + scale * clr 0, lb + scale * clr 2, lb + scale * clr 4)
     scale = ub - lb
     h6 = h * 6
 
+{-
 hsvColor h s v = makeColor r g b 1.0
   where
     (r, g, b) = hsv2rgb h s v
@@ -86,8 +87,10 @@ picIf True x = x
 picIf False _ = Blank
 
 selColor = Color $ greyN 0.4
+-}
 
-{- rendering -}
+{- rendering  OLD -}
+{-
 paintClusterSel sel = picIf sel $ selColor $ circleSolid 0.71
 
 paintCluster gcols fcols bg sc =
@@ -150,36 +153,60 @@ renderApp'__ sz st =
 
 renderApp__ s appst = unRef appst $ \st -> pure (greyN 0.2, renderApp' s st)
 
+{- rendering utils -}
+glPushPopMatrix a = glPushMatrix *> a <* glPopMatrix
+
+glBeginEnd t a = glBegin t *> a <* glEnd
+-}
+
+{- rendering (low-level) -}
 vertexShader =
   "#version 430 core\n\
  \ layout (location = 0) in vec3 pos;\n\
- \ layout (location = 1) uniform float scale;\n\
+ \ layout (location = 1) uniform mat4 proj;\n\
+ \ layout (location = 2) uniform float size;\n\
+ \ layout (location = 3) uniform vec2 trans;\n\
+ \ layout (location = 4) uniform vec2 rot;\n\
  \ void main()\n\
  \ {\n\
- \    gl_Position = vec4(pos.x*scale, pos.y*scale, pos.z*scale, 1.0);\n\
+ \    gl_Position = proj*vec4(\n\
+ \      trans.x+size*(pos.x*rot.x+pos.y*rot.y),\n\
+ \      trans.y+size*(pos.y*rot.x-pos.x*rot.y),\n\
+ \      pos.z, 1.0);\n\
  \ }"
 
 fragmentShader =
   "#version 430 core\n\
  \ out vec4 FragColor;\n\
+ \ layout (location = 5) uniform vec4 color;\n\
  \ void main()\n\
  \ {\n\
- \    FragColor = vec4(1.0f, 0.5f, 0.2f, 1.0f);\n\
+ \    FragColor = color;\n\
  \ }"
 
 c2i = fromIntegral . ord
 
 i2c = chr . fromIntegral
 
-circleBuf step =
-  map (1 *)
-    $ [0, 0]
+circleBuf step = [0, 0]
         ++ concatMap
-             (liftA2 (:) sin $ pure . cos)
-             (map (\x -> pi * x / 180) [0,step .. 360])
+             (liftA2 (:) cos $ pure . sin)
+             (map deg2rad [0,step .. 360])
+
+circleBufStepDeg = 20
+
+circleBufSteps = 360 `div` circleBufStepDeg
+
+deg2rad x = pi*x/180
+
+setProjection p = withArray p $ \arr -> glUniformMatrix4fv 1 1 GL_FALSE arr
+circleSize = glUniform1f 2
+circlePos = glUniform2f 3
+circleRot = (glUniform2f 4 <$> cos <*> sin) . deg2rad
+circleColor = glUniform4f 5
 
 renderSetup st = do
-  -- shaders
+  -- shaders first
   [vs, fs] <- traverse glCreateShader [GL_VERTEX_SHADER, GL_FRAGMENT_SHADER]
   for_ [(vs, vertexShader), (fs, fragmentShader)] $ \(s, src) ->
     withArray (map c2i src ++ [0]) $ \psrc ->
@@ -204,29 +231,41 @@ renderSetup st = do
   [buf] <- withArray [0] $ \a -> glGenBuffers 1 a >> peekArray 1 a
   glBindVertexArray arr
   glBindBuffer GL_ARRAY_BUFFER buf
-  withArrayLen (circleBuf 10 :: [Float]) $ \n a ->
-    glBufferData GL_ARRAY_BUFFER (4 * fromIntegral n) a GL_STATIC_DRAW
+  withArrayLen (circleBuf circleBufStepDeg :: [Float]) $ \n a ->
+    glBufferData GL_ARRAY_BUFFER (4 * fromIntegral n) (castPtr a) GL_STATIC_DRAW
   glVertexAttribPointer 0 2 GL_FLOAT GL_FALSE 8 nullPtr
   glEnableVertexAttribArray 0
   modifyIORef st $ rendererData . rdCircleArr .~ arr
   -- rendering stuff
   glClearColor 0.2 0.2 0.2 1.0
 
-renderApp s appst = unRef appst $ renderApp' s
-
+{-
 renderArc degs = do
   glBeginEnd GL_TRIANGLE_FAN $ do
     glVertex2f 0 0
-    for_ degs $ (glVertex2f <$> sin <*> cos) . (/ 180) . (* pi)
+    for_ degs $ (glVertex2f <$> cos <*> sin) . (/ 180) . (* pi)
 
 renderCircle = renderArc [0,20 .. 360]
+-}
+
+renderApp s appst = unRef appst $ renderApp' s
 
 renderApp' sz st = do
   glClear (GL_COLOR_BUFFER_BIT .|. GL_DEPTH_BUFFER_BIT)
   glUseProgram (st ^. rendererData . rdProgram)
   glBindVertexArray (st ^. rendererData . rdCircleArr)
-  glUniform1f 1 0.8
-  glDrawArrays GL_TRIANGLE_FAN 0 38
+  setProjection [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
+  circleSize 0.5
+  circlePos 0 0
+  circleRot 0
+  circleColor 0.5 0.6 0.7 1.0
+  glDrawArrays GL_TRIANGLE_FAN 0 (circleBufSteps+2)
+  circleSize 0.01
+  for_ [0 .. 39] $ \i ->
+    for_ [0 .. 39] $ \j -> do
+      circlePos (i/20 - 1) (j/20 - 1)
+      circleColor (i / 39) (j / 39) 0.8 1.0
+      glDrawArrays GL_TRIANGLE_FAN 0 (circleBufSteps+2)
   {-glLoadIdentity
   glScalef 0.1 0.1 1
   for_ [0 .. 39] $ \i ->
@@ -236,11 +275,6 @@ renderApp' sz st = do
         glTranslatef i j 0
         glScalef 0.4 0.4 1
         renderCircle-}
-
-{- rendering utils -}
-glPushPopMatrix a = glPushMatrix *> a <* glPopMatrix
-
-glBeginEnd t a = glBegin t *> a <* glEnd
 
 {- event processing -}
 onEvent sz (MouseButtonEvent b) appst
