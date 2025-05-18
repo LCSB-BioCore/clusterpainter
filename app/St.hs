@@ -10,6 +10,7 @@ import Data.Aeson
 import qualified Data.Set as S
 import qualified Data.Vector.Strict as V
 import DearImGui.Internal.Text
+import Graphics.GL
 import SDL.Vect
 
 type Ve = V.Vector
@@ -20,6 +21,7 @@ data AppState = St
   , _groupNames :: Ve Text
   , _syncOutFile :: Maybe FilePath
   , _hiFeatures :: S.Set Int
+  , _rendererData :: RendererData
   } deriving (Show)
 
 emptySt =
@@ -29,7 +31,15 @@ emptySt =
     , _groupNames = V.empty
     , _syncOutFile = Nothing
     , _hiFeatures = S.empty
+    , _rendererData = emptyRD
     }
+
+data RendererData = RD
+  { _rdProgram :: GLuint
+  , _rdCircleArr :: GLuint
+  } deriving (Show)
+
+emptyRD = RD {_rdProgram = 0, _rdCircleArr = 0}
 
 data Cluster = Cluster
   { _position :: V2 Float
@@ -53,6 +63,8 @@ emptyCluster =
     }
 
 $(makeLenses ''AppState)
+
+$(makeLenses ''RendererData)
 
 $(makeLenses ''Cluster)
 

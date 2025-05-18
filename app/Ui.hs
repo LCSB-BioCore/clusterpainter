@@ -9,14 +9,17 @@ import St
 import Control.Applicative
 import Control.Lens
 import Control.Monad (when)
+import Data.Bits
+import Data.Char (chr, ord)
 import Data.Foldable (foldl', for_)
 import Data.IORef
 import Data.Semigroup
-import Data.Bits
 import qualified Data.Set as S
 import qualified Data.Vector.Strict as V
 import DearImGui
 import DearImGui.Internal.Text
+import Foreign.Marshal.Array
+import Foreign.Ptr
 import Graphics.GL
 import Graphics.Gloss.Data.Color
 import Graphics.Gloss.Data.Picture hiding (text)
@@ -147,7 +150,66 @@ renderApp'__ sz st =
 
 renderApp__ s appst = unRef appst $ \st -> pure (greyN 0.2, renderApp' s st)
 
+vertexShader =
+  "#version 430 core\n\
+ \ layout (location = 0) in vec3 pos;\n\
+ \ layout (location = 1) uniform float scale;\n\
+ \ void main()\n\
+ \ {\n\
+ \    gl_Position = vec4(pos.x*scale, pos.y*scale, pos.z*scale, 1.0);\n\
+ \ }"
+
+fragmentShader =
+  "#version 430 core\n\
+ \ out vec4 FragColor;\n\
+ \ void main()\n\
+ \ {\n\
+ \    FragColor = vec4(1.0f, 0.5f, 0.2f, 1.0f);\n\
+ \ }"
+
+c2i = fromIntegral . ord
+
+i2c = chr . fromIntegral
+
+circleBuf step =
+  map (1 *)
+    $ [0, 0]
+        ++ concatMap
+             (liftA2 (:) sin $ pure . cos)
+             (map (\x -> pi * x / 180) [0,step .. 360])
+
 renderSetup st = do
+  -- shaders
+  [vs, fs] <- traverse glCreateShader [GL_VERTEX_SHADER, GL_FRAGMENT_SHADER]
+  for_ [(vs, vertexShader), (fs, fragmentShader)] $ \(s, src) ->
+    withArray (map c2i src ++ [0]) $ \psrc ->
+      withArray [psrc] $ \ppsrc -> do
+        glShaderSource s 1 ppsrc nullPtr
+        glCompileShader s
+        [succ] <-
+          withArray [0] $ \a ->
+            glGetShaderiv s GL_COMPILE_STATUS a >> peekArray 1 a
+        when (succ == 0) $ do
+          log <-
+            withArray (replicate 512 0) $ \a ->
+              glGetShaderInfoLog s 512 nullPtr a >> peekArray 512 a
+          print . map i2c $ takeWhile (/= 0) log
+  prog <- glCreateProgram
+  traverse (glAttachShader prog) [vs, fs]
+  glLinkProgram prog
+  traverse glDeleteShader [vs, fs]
+  modifyIORef st $ rendererData . rdProgram .~ prog
+  -- array&data
+  [arr] <- withArray [0] $ \a -> glGenVertexArrays 1 a >> peekArray 1 a
+  [buf] <- withArray [0] $ \a -> glGenBuffers 1 a >> peekArray 1 a
+  glBindVertexArray arr
+  glBindBuffer GL_ARRAY_BUFFER buf
+  withArrayLen (circleBuf 10 :: [Float]) $ \n a ->
+    glBufferData GL_ARRAY_BUFFER (4 * fromIntegral n) a GL_STATIC_DRAW
+  glVertexAttribPointer 0 2 GL_FLOAT GL_FALSE 8 nullPtr
+  glEnableVertexAttribArray 0
+  modifyIORef st $ rendererData . rdCircleArr .~ arr
+  -- rendering stuff
   glClearColor 0.2 0.2 0.2 1.0
 
 renderApp s appst = unRef appst $ renderApp' s
@@ -155,23 +217,27 @@ renderApp s appst = unRef appst $ renderApp' s
 renderArc degs = do
   glBeginEnd GL_TRIANGLE_FAN $ do
     glVertex2f 0 0
-    for_ degs $ (glVertex2f <$> sin <*> cos) . (/180) . (*pi)
+    for_ degs $ (glVertex2f <$> sin <*> cos) . (/ 180) . (* pi)
 
-renderCircle = renderArc [0,20..360]
+renderCircle = renderArc [0,20 .. 360]
 
 renderApp' sz st = do
   glClear (GL_COLOR_BUFFER_BIT .|. GL_DEPTH_BUFFER_BIT)
-  glLoadIdentity
+  glUseProgram (st ^. rendererData . rdProgram)
+  glBindVertexArray (st ^. rendererData . rdCircleArr)
+  glUniform1f 1 0.8
+  glDrawArrays GL_TRIANGLE_FAN 0 38
+  {-glLoadIdentity
   glScalef 0.1 0.1 1
-  for_ [0..39] $ \i -> for_ [0..39] $ \j -> do
-    glColor3f (i/19) (j/19) 0.8
-    glPushPopMatrix $ do
-      glTranslatef i j 0
-      glScalef 0.4 0.4 1
-      renderCircle
+  for_ [0 .. 39] $ \i ->
+    for_ [0 .. 39] $ \j -> do
+      glColor3f (i / 19) (j / 19) 0.8
+      glPushPopMatrix $ do
+        glTranslatef i j 0
+        glScalef 0.4 0.4 1
+        renderCircle-}
 
 {- rendering utils -}
-
 glPushPopMatrix a = glPushMatrix *> a <* glPopMatrix
 
 glBeginEnd t a = glBegin t *> a <* glEnd

@@ -41,7 +41,9 @@ main = do
               glGetString GL_VENDOR >>= peekCString . castPtr >>= print
               glGetString GL_RENDERER >>= peekCString . castPtr >>= print
               glGetString GL_VERSION >>= peekCString . castPtr >>= print
-              glGetString GL_SHADING_LANGUAGE_VERSION >>= peekCString . castPtr >>= print
+              glGetString GL_SHADING_LANGUAGE_VERSION
+                >>= peekCString . castPtr
+                >>= print
               st <- initState
               swapInterval $= LateSwapTearing
               renderSetup appst
