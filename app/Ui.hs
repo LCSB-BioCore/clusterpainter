@@ -176,6 +176,7 @@ renderSetup st = do
   withCString "■ □" $ GR.addText builder
   rangesVec <- GR.buildRangesVector builder
   let ranges = GR.fromRangesVector rangesVec
+  --TODO carry the file
   F.addFontFromFileTTF
     "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
     20.0
@@ -184,7 +185,6 @@ renderSetup st = do
   F.build
   GR.destroyRangesVector rangesVec
   GR.destroy builder
-  --FA.addFontFromFileTTF "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf" 20.0 Nothing (Just )
 
 renderApp s appst = unRef appst $ renderApp' s
 
