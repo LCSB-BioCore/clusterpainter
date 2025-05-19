@@ -13,6 +13,7 @@ import Data.Bits
 import Data.Char (chr, ord)
 import Data.Foldable (foldl', for_)
 import Data.IORef
+import qualified Data.Map.Strict as M
 import Data.Semigroup
 import qualified Data.Set as S
 import qualified Data.Vector.Strict as V
@@ -21,13 +22,14 @@ import DearImGui.Internal.Text
 import Foreign.Marshal.Array
 import Foreign.Ptr
 import Graphics.GL
-import Graphics.Gloss.Data.Color
-import Graphics.Gloss.Data.Picture hiding (text)
-import Graphics.Gloss.Rendering
 import SDL
 
 {- projection helpers -}
 v2rry f (V2 x y) = f x y
+
+v3rry f (V3 x y z) = f x y z
+
+v4rry f (V4 x y z w) = f x y z w
 
 inf = 1 / 0 :: Float
 
@@ -37,15 +39,19 @@ projectionLimits =
     (pure inf, pure (-inf))
 
 scaleUnscale ::
-     (Integral i) => V2 i -> AppState -> (Picture -> Picture, V2 i -> V2 Float)
-scaleUnscale ss@(V2 sx sy) st =
+     AppState
+  -> (GLfloat -> GLfloat -> IO (), GLfloat -> IO (), V2 Float -> V2 Float)
+scaleUnscale st =
   let (vmin, vmax) = st ^. clusters . to projectionLimits
+      vmid@(V2 vmidx vmidy) = (vmin + vmax) / 2
       s@(V2 xs ys) = vmax - vmin
-      sc = min (fromIntegral sx / xs) (fromIntegral sy / ys) * 0.8 --TODO zoom
-   in ( Scale sc (-sc) . Translate (-xs / 2) (-ys / 2)
-      , \cur -> fmap fromIntegral (cur - (liftA2 div ss 2)) / pure sc + s / 2)
+      sc = min (1 / xs) (1 / ys) * 0.8 --TODO zoom
+   in ( \posx posy ->
+          circlePos ((posx - vmidx) * sc + 0.5) ((posy - vmidy) * sc + 0.5)
+      , \size -> circleSize (size * sc)
+      , \pt -> (pt - pure 0.5) / pure sc + vmid)
 
-clusterAt pos sz st =
+clusterAt pos st =
   getArg . minimum
     $ Arg inf Nothing
         : [ Arg d (Just i)
@@ -59,7 +65,8 @@ clusterAt pos sz st =
     getArg (Arg _ a) = a
 
 {- coloring helpers -}
-hsv2rgb h s v = (lb + scale * clr 0, lb + scale * clr 2, lb + scale * clr 4)
+hsv2rgb h s v a =
+  V4 (lb + scale * clr 0) (lb + scale * clr 2) (lb + scale * clr 4) a
   where
     clr off =
       let hc = h6 - off
@@ -77,87 +84,6 @@ hsv2rgb h s v = (lb + scale * clr 0, lb + scale * clr 2, lb + scale * clr 4)
     lb = ub * (1 - s)
     scale = ub - lb
     h6 = h * 6
-
-{-
-hsvColor h s v = makeColor r g b 1.0
-  where
-    (r, g, b) = hsv2rgb h s v
-
-picIf True x = x
-picIf False _ = Blank
-
-selColor = Color $ greyN 0.4
--}
-
-{- rendering  OLD -}
-{-
-paintClusterSel sel = picIf sel $ selColor $ circleSolid 0.71
-
-paintCluster gcols fcols bg sc =
-  Pictures
-    [ Scale sc sc
-        $ Pictures
-            [ let ng = length gcols
-                  fng = fromIntegral ng
-               in picIf (ng /= 0)
-                    $ Pictures
-                    $ do
-                        (i, g) <- zip [0 ..] gcols
-                        let fi = fromIntegral i
-                        pure . Color g
-                          $ ThickArc
-                              (fi * 360 / fng)
-                              ((fi + 1) * 360 / fng)
-                              0.225
-                              0.45
-            , Color (greyN bg) $ circleSolid 0.4
-            , let nf = length fcols
-                  fnf = fromIntegral nf
-               in picIf (nf /= 0)
-                    $ Pictures
-                    $ do
-                        (i, f) <- zip [0 ..] fcols
-                        let fi = fromIntegral i
-                        pure . Color f
-                          $ ThickArc
-                              (fi * 360 / fnf)
-                              ((fi + 1) * 360 / fnf)
-                              0.15
-                              0.3
-            ]
-    ]
-
-renderApp'__ sz st =
-  scale . Pictures
-    $ map
-        (\c ->
-           v2rry translate (c ^. position)
-             $ paintClusterSel (c ^. clusterSelected))
-        cs
-        ++ map
-             (\c ->
-                v2rry translate (c ^. position)
-                  $ paintCluster
-                      []
-                      [ fcolor i (c ^. features . to (V.! i))
-                      | i <- S.toList (st ^. hiFeatures)
-                      ]
-                      0.0
-                      (c ^. weight))
-             cs
-  where
-    cs = st ^. clusters . to V.toList
-    nfeat = st ^. featureNames . to length . to fromIntegral
-    fcolor fid fval = hsvColor (fromIntegral fid / nfeat) 1.0 fval
-    (scale, _) = scaleUnscale sz st
-
-renderApp__ s appst = unRef appst $ \st -> pure (greyN 0.2, renderApp' s st)
-
-{- rendering utils -}
-glPushPopMatrix a = glPushMatrix *> a <* glPopMatrix
-
-glBeginEnd t a = glBegin t *> a <* glEnd
--}
 
 {- rendering (low-level) -}
 vertexShader =
@@ -188,21 +114,24 @@ c2i = fromIntegral . ord
 
 i2c = chr . fromIntegral
 
-circleBuf step = [0, 0]
-        ++ concatMap
-             (liftA2 (:) cos $ pure . sin)
-             (map deg2rad [0,step .. 360])
+circleBuf step =
+  [0, 0]
+    ++ concatMap (liftA2 (:) cos $ pure . sin) (map deg2rad [0,step .. 360])
 
-circleBufStepDeg = 20
+circleBufStepDeg = 10
 
 circleBufSteps = 360 `div` circleBufStepDeg
 
-deg2rad x = pi*x/180
+deg2rad x = pi * x / 180
 
 setProjection p = withArray p $ \arr -> glUniformMatrix4fv 1 1 GL_FALSE arr
+
 circleSize = glUniform1f 2
+
 circlePos = glUniform2f 3
+
 circleRot = (glUniform2f 4 <$> cos <*> sin) . deg2rad
+
 circleColor = glUniform4f 5
 
 renderSetup st = do
@@ -239,59 +168,139 @@ renderSetup st = do
   -- rendering stuff
   glClearColor 0.2 0.2 0.2 1.0
 
-{-
-renderArc degs = do
-  glBeginEnd GL_TRIANGLE_FAN $ do
-    glVertex2f 0 0
-    for_ degs $ (glVertex2f <$> cos <*> sin) . (/ 180) . (* pi)
-
-renderCircle = renderArc [0,20 .. 360]
--}
-
 renderApp s appst = unRef appst $ renderApp' s
+
+isotropicUnitProjection sz = do
+  let V2 sx sy = fromIntegral <$> sz
+  if sx >= sy
+    then let r = sy / sx
+          in setProjection
+               [2 * r, 0, 0, 0, 0, -2, 0, 0, 0, 0, 1, 0, -r, 1, 0, 1]
+    else let r = sx / sy
+          in setProjection
+               [2, 0, 0, 0, 0, -2 * r, 0, 0, 0, 0, 1, 0, -1, r, 0, 1]
+
+unprojectIsotropicUnit sz pt = do
+  let V2 sx sy = fromIntegral <$> sz
+      V2 px py = fromIntegral <$> pt
+  if sx >= sy
+    then V2 (((px - (sx - sy) / 2) / sy)) (py / sy)
+    else V2 (px / sx) ((py - (sy - sx) / 2) / sx)
 
 renderApp' sz st = do
   glClear (GL_COLOR_BUFFER_BIT .|. GL_DEPTH_BUFFER_BIT)
   glUseProgram (st ^. rendererData . rdProgram)
   glBindVertexArray (st ^. rendererData . rdCircleArr)
-  setProjection [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
-  circleSize 0.5
-  circlePos 0 0
+  isotropicUnitProjection sz
+  let cPos :: Float -> Float -> IO ()
+      cSz :: Float -> IO ()
+      (cPos, cSz, _) = scaleUnscale st
   circleRot 0
-  circleColor 0.5 0.6 0.7 1.0
-  glDrawArrays GL_TRIANGLE_FAN 0 (circleBufSteps+2)
-  circleSize 0.01
-  for_ [0 .. 39] $ \i ->
-    for_ [0 .. 39] $ \j -> do
-      circlePos (i/20 - 1) (j/20 - 1)
-      circleColor (i / 39) (j / 39) 0.8 1.0
-      glDrawArrays GL_TRIANGLE_FAN 0 (circleBufSteps+2)
-  {-glLoadIdentity
-  glScalef 0.1 0.1 1
-  for_ [0 .. 39] $ \i ->
-    for_ [0 .. 39] $ \j -> do
-      glColor3f (i / 19) (j / 19) 0.8
-      glPushPopMatrix $ do
-        glTranslatef i j 0
-        glScalef 0.4 0.4 1
-        renderCircle-}
+  {- selection painting -}
+  cSz 0.666
+  circleColor 0.6 0.6 0.6 1
+  for_ (st ^.. clusters . to V.toList . each) $ \c ->
+    when (c ^. clusterSelected) $ do
+      v2rry cPos $ c ^. position
+      glDrawArrays GL_TRIANGLE_FAN 0 (circleBufSteps + 2)
+  {- cluster painting -}
+  let (featmap, groupmap) = featureGroupColors st
+      featAngle = 360 / fromIntegral (M.size featmap)
+      nFeatSlices = ceiling $ featAngle / circleBufStepDeg
+      franges = st ^. featureRanges
+      groupAngle = 360 / fromIntegral (M.size groupmap)
+      nGroupSlices = ceiling $ groupAngle / circleBufStepDeg
+  for_ (st ^.. clusters . to V.toList . each) $ \c -> do
+    v2rry cPos $ c ^. position
+    {- groups -}
+    cSz 0.45
+    when (not $ M.null groupmap)
+      $ for_ (zip [0 ..] (M.toAscList groupmap))
+      $ \(i, (gid, clr)) ->
+          when (c ^. groups . to (S.member gid)) $ do
+            v4rry circleColor clr
+            circleRot (groupAngle * i)
+            glDrawArrays GL_TRIANGLE_FAN 0 (nGroupSlices + 2)
+    circleRot 0
+    {- sleepwalk background -}
+    cSz 0.4
+    circleColor 0 0 0 1
+    glDrawArrays GL_TRIANGLE_FAN 0 (circleBufSteps + 2)
+    {- star plot-}
+    when (not $ M.null featmap) $ do
+      for_ (zip [0 ..] (M.toAscList featmap)) $ \(i, (fid, clr)) -> do
+        v4rry circleColor clr
+        circleRot (featAngle * i)
+        let (V2 fmin frng) = franges V.! fid
+        cSz . (0.3 *) . sqrt $ ((c ^. features) V.! fid - fmin) / frng
+        glDrawArrays GL_TRIANGLE_FAN 0 (nFeatSlices + 2)
+    circleRot 0
+
+doPaint ci appst =
+  unRef appst $ \st -> do
+    case st ^. painting of
+      Just b -> modifyIORef appst $ clusters . ix ci . clusterSelected .~ b
+      _ -> pure ()
 
 {- event processing -}
 onEvent sz (MouseButtonEvent b) appst
+  | Released <- mouseButtonEventMotion b
+  , ButtonLeft <- mouseButtonEventButton b =
+    modifyIORef appst $ painting .~ Nothing
   | Pressed <- mouseButtonEventMotion b
   , ButtonLeft <- mouseButtonEventButton b
   , P p <- mouseButtonEventPos b =
     unRef appst $ \st ->
-      let unscale = snd $ scaleUnscale sz st
-       in case clusterAt (unscale p) sz st of
+      let (_, _, unscale) = scaleUnscale st
+       in case clusterAt (unscale $ unprojectIsotropicUnit sz p) st of
             Just ci -> do
-              print ci
-              modifyIORef appst $ clusters . ix ci . clusterSelected %~ not
+              let Just action =
+                    st ^? clusters . ix ci . clusterSelected . to (Just . not)
+              modifyIORef appst $ painting .~ action
+              doPaint ci appst
+            Nothing -> do
+              modifyIORef appst $ clusters . each . clusterSelected .~ False
+onEvent sz (MouseMotionEvent b) appst
+  | P p <- mouseMotionEventPos b =
+    unRef appst $ \st ->
+      let (_, _, unscale) = scaleUnscale st
+       in case clusterAt (unscale $ unprojectIsotropicUnit sz p) st of
+            Just ci -> do
+              doPaint ci appst
             _ -> pure ()
 onEvent _ _ _ = pure ()
 
 {- user interface -}
 whenM a b = a >>= flip when b
+
+bresenhamSplit k n xs
+  | k * 2 > n =
+    let (as, bs) = bresenhamSplit (n - k) n xs
+     in (bs, as)
+  | otherwise = go ((2 * k) - n) xs
+  where
+    go _ [] = ([], [])
+    go d (x:xs)
+      | d > 0 =
+        let (as, bs) = go (d - 2 * n + 2 * k) xs
+         in (as, x : bs)
+      | otherwise =
+        let (as, bs) = go (d + 2 * k) xs
+         in (x : as, bs)
+
+featureGroupColors :: AppState -> (M.Map Int (V4 Float), M.Map Int (V4 Float))
+featureGroupColors st =
+  let nFeats = st ^. hiFeatures . to S.size
+      nGroups = st ^. hiGroups . to S.size
+      n = nFeats + nGroups
+      cols :: [V4 Float]
+      cols =
+        map
+          (\h -> hsv2rgb h 0.75 1 1)
+          [fromIntegral i / fromIntegral n | i <- [1 .. n]]
+      (groupCols, featCols) = bresenhamSplit nFeats n cols
+   in ( M.fromAscList $ zip (st ^. hiFeatures . to S.toList) featCols
+      , M.fromAscList $ zip (st ^. hiGroups . to S.toList) groupCols)
 
 drawUI _ appst = do
   showDemoWindow
@@ -307,13 +316,47 @@ drawUI _ appst = do
                   inputText "" r 100
                   sameLine
                   whenM (button "show") $ do
-                    print i
                     modifyIORef appst $ hiFeatures %~ S.insert i
                   sameLine
                   whenM (button "hide") $ do
-                    print i
                     modifyIORef appst $ hiFeatures %~ S.delete i
-  withWindowOpen "Groups" $ text "TODO"
+  withWindowOpen "Groups" $ do
+    withZoom appst groupNames $ \r ->
+      withVal_ r
+        $ V.imapM
+        $ \i t ->
+            withRef_ t $ \r ->
+              withID (pack $ show i) $ do
+                inputText "" r 100
+                sameLine
+                whenM (button "show") $ do
+                  modifyIORef appst $ hiGroups %~ S.insert i
+                sameLine
+                whenM (button "hide") $ do
+                  modifyIORef appst $ hiGroups %~ S.delete i
+                sameLine
+                whenM (button "select") $ do
+                  modifyIORef appst
+                    $ clusters . traverse
+                        %~ (\c ->
+                              clusterSelected .~ (c ^. groups . to (S.member i))
+                                $ c)
+                sameLine
+                whenM (button "assign") $ do
+                  modifyIORef appst $ hiGroups %~ S.insert i
+                  modifyIORef appst
+                    $ clusters . traverse
+                        %~ (\c ->
+                              c
+                                & groups
+                                    %~ (if c ^. clusterSelected
+                                          then S.insert i
+                                          else S.delete i))
+                sameLine
+                whenM (button "delete") $ do
+                  pure ()
+    whenM (button "add") $ do
+      modifyIORef appst $ groupNames %~ flip V.snoc "group"
   withWindowOpen "Sleepwalk" $ text "TODO"
   withWindowOpen "Data" $ do
     whenM (collapsingHeader "In selection" Nothing) $ do

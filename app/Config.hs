@@ -10,6 +10,7 @@ import St
 import Control.Monad
 import Data.Aeson
 import Data.Bool
+import Data.List
 import qualified Data.Set as S
 import qualified Data.Vector.Strict as V
 import Data.Version (showVersion)
@@ -219,6 +220,8 @@ processOpts = do
               checkMtxSz gf nc (length gns) gs
               pure (gns, gs)
         pure FSt {fsClusterGroups = gs, fsFeatures = fns, fsGroups = gns}
+  let featureMins = foldl1' (zipWith min) fs
+      featureMaxs = foldl1' (zipWith max) fs
   pure
     emptySt
       { _featureNames = V.fromList . map pack $ fsFeatures fst
@@ -226,6 +229,9 @@ processOpts = do
       , _syncOutFile = outFile o
       , _clusters =
           V.fromList $ zipClusters projs ws fs ms vs (fsClusterGroups fst)
+      , _featureRanges =
+          V.fromList
+            $ zipWith V2 featureMins (zipWith (-) featureMaxs featureMins)
       }
 
 zipClusters (p:ps) (w:ws) (f:fs) (m:ms) (v:vs) (g:gs) =

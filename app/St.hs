@@ -21,7 +21,10 @@ data AppState = St
   , _groupNames :: Ve Text
   , _syncOutFile :: Maybe FilePath
   , _hiFeatures :: S.Set Int
+  , _hiGroups :: S.Set Int
+  , _featureRanges :: Ve (V2 Float)
   , _rendererData :: RendererData
+  , _painting :: Maybe Bool
   } deriving (Show)
 
 emptySt =
@@ -31,7 +34,10 @@ emptySt =
     , _groupNames = V.empty
     , _syncOutFile = Nothing
     , _hiFeatures = S.empty
+    , _hiGroups = S.empty
+    , _featureRanges = V.empty
     , _rendererData = emptyRD
+    , _painting = Nothing
     }
 
 data RendererData = RD

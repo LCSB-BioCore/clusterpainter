@@ -31,8 +31,6 @@ executable clusterpainter
     , base
     , containers
     , dear-imgui
-    , gloss
-    , gloss-rendering
     , lens
     , gl
     , optparse-applicative

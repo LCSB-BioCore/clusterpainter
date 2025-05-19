@@ -9,7 +9,6 @@ import DearImGui.OpenGL3
 import DearImGui.SDL
 import DearImGui.SDL.OpenGL
 import Graphics.GL
-import Graphics.Gloss.Rendering
 import SDL
 import SDL.Raw.Video (getCurrentVideoDriver)
 import System.Mem
@@ -44,13 +43,11 @@ main = do
               glGetString GL_SHADING_LANGUAGE_VERSION
                 >>= peekCString . castPtr
                 >>= print
-              st <- initState
               swapInterval $= LateSwapTearing
               renderSetup appst
-              mainLoop appst st window
+              mainLoop appst window
 
---mainLoop :: AppState -> State -> Window -> IO ()
-mainLoop appst st window = loop
+mainLoop appst window = loop
   where
     v2tup (V2 a b) = (a, b)
     loop = do
@@ -63,10 +60,9 @@ mainLoop appst st window = loop
         newFrame
         -- rendering
         ws <- fmap fromIntegral <$> get (windowSize window)
-        renderApp ws appst -- >>= \(bg, pic) -> displayPicture (v2tup ws) bg st 1.0 pic
+        renderApp ws appst
         -- UI
         drawUI ws appst
-        -- UI rendering
         render
         openGL3RenderDrawData =<< getDrawData
         -- post-frame
