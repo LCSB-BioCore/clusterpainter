@@ -18,7 +18,9 @@ import Data.Semigroup
 import qualified Data.Set as S
 import qualified Data.Vector.Strict as V
 import DearImGui
+import DearImGui.FontAtlas as F
 import DearImGui.Internal.Text
+import DearImGui.Raw.Font.GlyphRanges as GR
 import Foreign.Marshal.Array
 import Foreign.Ptr
 import Graphics.GL
@@ -45,7 +47,7 @@ scaleUnscale st =
   let (vmin, vmax) = st ^. clusters . to projectionLimits
       vmid@(V2 vmidx vmidy) = (vmin + vmax) / 2
       s@(V2 xs ys) = vmax - vmin
-      sc = min (1 / xs) (1 / ys) * 0.8 --TODO zoom
+      sc = min (1 / xs) (1 / ys) * 0.8 --TODO zoom?
    in ( \posx posy ->
           circlePos ((posx - vmidx) * sc + 0.5) ((posy - vmidy) * sc + 0.5)
       , \size -> circleSize (size * sc)
@@ -167,6 +169,22 @@ renderSetup st = do
   modifyIORef st $ rendererData . rdCircleArr .~ arr
   -- rendering stuff
   glClearColor 0.2 0.2 0.2 1.0
+  -- imgui
+  F.clear
+  builder <- GR.new
+  GR.addRanges builder $ GR.getBuiltin GR.Latin
+  withCString "■ □" $ GR.addText builder
+  rangesVec <- GR.buildRangesVector builder
+  let ranges = GR.fromRangesVector rangesVec
+  F.addFontFromFileTTF
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+    20.0
+    Nothing
+    (Just ranges)
+  F.build
+  GR.destroyRangesVector rangesVec
+  GR.destroy builder
+  --FA.addFontFromFileTTF "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf" 20.0 Nothing (Just )
 
 renderApp s appst = unRef appst $ renderApp' s
 
@@ -303,7 +321,8 @@ featureGroupColors st =
       , M.fromAscList $ zip (st ^. hiGroups . to S.toList) groupCols)
 
 drawUI _ appst = do
-  showDemoWindow
+  (featmap, groupmap) <- featureGroupColors <$> readIORef appst
+  --showDemoWindow
   withWindowOpen "FPS" $ framerate >>= text . pack . show
   withWindowOpen "Features"
     $ withZoom appst featureNames
@@ -313,6 +332,13 @@ drawUI _ appst = do
           $ \i t ->
               withRef_ t $ \r ->
                 withID (pack $ show i) $ do
+                  case featmap M.!? i of
+                    Nothing -> text "□"
+                    Just col ->
+                      textColored
+                        ((pure :: ImVec4 -> IO ImVec4) $ v4rry ImVec4 col)
+                        "■"
+                  sameLine
                   inputText "" r 100
                   sameLine
                   whenM (button "show") $ do
@@ -327,8 +353,13 @@ drawUI _ appst = do
         $ \i t ->
             withRef_ t $ \r ->
               withID (pack $ show i) $ do
-                markpos <- getCursorScreenPos
-                --TODO addRectFilled doesn't seem to be exported from imgui?
+                case groupmap M.!? i of
+                  Nothing -> text "□"
+                  Just col ->
+                    textColored
+                      ((pure :: ImVec4 -> IO ImVec4) $ v4rry ImVec4 col)
+                      "■"
+                sameLine
                 inputText "" r 100
                 sameLine
                 whenM (button "show") $ do
