@@ -213,7 +213,7 @@ renderApp' sz st = do
   for_ (st ^.. clusters . to V.toList . each) $ \c -> do
     v2rry cPos $ c ^. position
     {- groups -}
-    cSz 0.45
+    cSz 0.48
     when (not $ M.null groupmap)
       $ for_ (zip [0 ..] (M.toAscList groupmap))
       $ \(i, (gid, clr)) ->
@@ -327,6 +327,8 @@ drawUI _ appst = do
         $ \i t ->
             withRef_ t $ \r ->
               withID (pack $ show i) $ do
+                markpos <- getCursorScreenPos
+                --TODO addRectFilled doesn't seem to be exported from imgui?
                 inputText "" r 100
                 sameLine
                 whenM (button "show") $ do
@@ -354,7 +356,7 @@ drawUI _ appst = do
                                           else S.delete i))
                 sameLine
                 whenM (button "delete") $ do
-                  pure ()
+                  pure () -- TODO
     whenM (button "add") $ do
       modifyIORef appst $ groupNames %~ flip V.snoc "group"
   withWindowOpen "Sleepwalk" $ text "TODO"
