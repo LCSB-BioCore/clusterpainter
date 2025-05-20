@@ -446,7 +446,8 @@ drawUI _ appst = do
     $ withTable defTableOptions "##data" (succ $ st ^. hiFeatures ^. to S.size)
     $ flip when
     $ do
-      --TODO globalize the lows/ups I guess
+        --TODO globalize the lows/ups I guess
+        --TODO the multilens in the middle is called "alongside"
         let [flows, fhighs] =
               map
                 (\f ->
