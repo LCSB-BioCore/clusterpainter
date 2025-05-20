@@ -76,7 +76,7 @@ opts = do
           <> long "topology"
           <> metavar "JSON"
           <> help
-               "topology description (should contain an object with key `projection' which specifies 2D position of each of the clusters)"
+               "topology description (should contain an object with key `projection' which specifies 2D position of each of the clusters, and `topology' which specifies a squared distance of clusters to each other cluster)"
   weightsFile <-
     optional . strOption
       $ short 'w'
@@ -168,8 +168,11 @@ processOpts = do
         x <- decodeFile wf
         checkVecSz wf nc x
         pure x
-  projs <- map (uncurry V2) . projection <$> decodeFile (topoFile o)
-  checkVecSz (topoFile o) nc projs
+  topoData <- decodeFile (topoFile o)
+  let projs = map (uncurry V2) $ projection topoData
+      topos = topology topoData
+  checkVecSz (topoFile o ++ ", key projections") nc projs
+  checkMtxSz (topoFile o ++ ", key topology") nc nc topos
   ms <-
     case meansFile o of
       Nothing -> pure fs
@@ -222,25 +225,43 @@ processOpts = do
         pure FSt {fsClusterGroups = gs, fsFeatures = fns, fsGroups = gns}
   let featureMins = foldl1' (zipWith min) fs
       featureMaxs = foldl1' (zipWith max) fs
+      inf = 1 / 0 :: Float
+      positionRange =
+        foldl'
+          (\(l, u) p -> (liftA2 min l p, liftA2 max u p))
+          (pure inf, pure (-inf))
+          projs
   pure
     emptySt
       { _featureNames = V.fromList . map pack $ fsFeatures fst
       , _groupNames = V.fromList . map pack $ fsGroups fst
       , _syncOutFile = outFile o
       , _clusters =
-          V.fromList $ zipClusters projs ws fs ms vs (fsClusterGroups fst)
+          V.fromList $ zipClusters projs topos ws fs ms vs (fsClusterGroups fst)
       , _featureRanges =
           V.fromList
             $ zipWith V2 featureMins (zipWith (-) featureMaxs featureMins)
+      , _positionRange = positionRange
       }
 
-zipClusters (p:ps) (w:ws) (f:fs) (m:ms) (v:vs) (g:gs) =
+zipClusters ::
+     [V2 Float]
+  -> [[Float]]
+  -> [Float]
+  -> [[Float]]
+  -> [[Float]]
+  -> [[Float]]
+  -> [[Bool]]
+  -> [Cluster]
+zipClusters (p:ps) (t:ts) (w:ws) (f:fs) (m:ms) (v:vs) (g:gs) =
   emptyCluster
     { _position = p
+    , _topoDists = V.fromList t
     , _weight = w
     , _features = V.fromList f
     , _featMeans = V.fromList m
     , _featVars = V.fromList v
+    , _groups = S.fromList [i | (i, mem) <- zip [0 ..] g, mem]
     }
-    : zipClusters ps ws fs ms vs gs
-zipClusters _ _ _ _ _ _ = []
+    : zipClusters ps ts ws fs ms vs gs
+zipClusters _ _ _ _ _ _ _ = []

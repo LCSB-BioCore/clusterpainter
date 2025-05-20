@@ -23,9 +23,20 @@ data AppState = St
   , _hiFeatures :: S.Set Int
   , _hiGroups :: S.Set Int
   , _featureRanges :: Ve (V2 Float)
+  , _positionRange :: (V2 Float, V2 Float)
   , _rendererData :: RendererData
   , _painting :: Maybe Bool
+  , _hover :: Maybe Int
+  , _swSigma :: Float
+  , _swMode :: SWMode
   } deriving (Show)
+
+data SWMode
+  = SWOff
+  | SWTopo
+  | SWAllFeatures
+  | SWSelFeatures
+  deriving (Show, Eq)
 
 emptySt =
   St
@@ -36,8 +47,12 @@ emptySt =
     , _hiFeatures = S.empty
     , _hiGroups = S.empty
     , _featureRanges = V.empty
+    , _positionRange = (V2 0 0, V2 0 0)
     , _rendererData = emptyRD
     , _painting = Nothing
+    , _hover = Nothing
+    , _swSigma = 1
+    , _swMode = SWOff
     }
 
 data RendererData = RD
@@ -49,6 +64,7 @@ emptyRD = RD {_rdProgram = 0, _rdCircleArr = 0}
 
 data Cluster = Cluster
   { _position :: V2 Float
+  , _topoDists :: Ve Float
   , _weight :: Float
   , _features :: Ve Float
   , _featMeans :: Ve Float
@@ -60,6 +76,7 @@ data Cluster = Cluster
 emptyCluster =
   Cluster
     { _position = V2 0 0
+    , _topoDists = V.empty
     , _weight = 0
     , _features = V.empty
     , _featMeans = V.empty

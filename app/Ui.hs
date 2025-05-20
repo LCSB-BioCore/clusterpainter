@@ -8,7 +8,7 @@ import St
 
 import Control.Applicative
 import Control.Lens
-import Control.Monad (when)
+import Control.Monad (void, when)
 import Data.Bits
 import Data.Char (chr, ord)
 import Data.Foldable (foldl', for_)
@@ -18,9 +18,9 @@ import Data.Semigroup
 import qualified Data.Set as S
 import qualified Data.Vector.Strict as V
 import DearImGui
-import DearImGui.FontAtlas as F
+import qualified DearImGui.FontAtlas as F
 import DearImGui.Internal.Text
-import DearImGui.Raw.Font.GlyphRanges as GR
+import qualified DearImGui.Raw.Font.GlyphRanges as GR
 import Foreign.Marshal.Array
 import Foreign.Ptr
 import Graphics.GL
@@ -35,16 +35,11 @@ v4rry f (V4 x y z w) = f x y z w
 
 inf = 1 / 0 :: Float
 
-projectionLimits =
-  foldl'
-    (\(l, u) c -> (liftA2 min l (c ^. position), liftA2 max u (c ^. position)))
-    (pure inf, pure (-inf))
-
 scaleUnscale ::
      AppState
   -> (GLfloat -> GLfloat -> IO (), GLfloat -> IO (), V2 Float -> V2 Float)
 scaleUnscale st =
-  let (vmin, vmax) = st ^. clusters . to projectionLimits
+  let (vmin, vmax) = st ^. positionRange
       vmid@(V2 vmidx vmidy) = (vmin + vmax) / 2
       s@(V2 xs ys) = vmax - vmin
       sc = min (1 / xs) (1 / ys) * 0.8 --TODO zoom?
@@ -172,7 +167,10 @@ renderSetup st = do
   -- imgui
   F.clear
   builder <- GR.new
-  GR.addRanges builder $ GR.getBuiltin GR.Latin
+  for_ [GR.Latin, GR.Cyrillic] $ GR.addRanges builder . GR.getBuiltin
+  -- ranges are: latin ext + IPA, and greek+coptic+cyrillic+ext
+  withArray [0xa0, 0x2ff, 0x370, 0x52f, 0] $ \a ->
+    GR.addRanges builder $ GR.GlyphRanges a
   withCString "■ □" $ GR.addText builder
   rangesVec <- GR.buildRangesVector builder
   let ranges = GR.fromRangesVector rangesVec
@@ -228,7 +226,7 @@ renderApp' sz st = do
       franges = st ^. featureRanges
       groupAngle = 360 / fromIntegral (M.size groupmap)
       nGroupSlices = ceiling $ groupAngle / circleBufStepDeg
-  for_ (st ^.. clusters . to V.toList . each) $ \c -> do
+  for_ (st ^.. clusters . each) $ \c -> do
     v2rry cPos $ c ^. position
     {- groups -}
     cSz 0.48
@@ -242,7 +240,32 @@ renderApp' sz st = do
     circleRot 0
     {- sleepwalk background -}
     cSz 0.4
-    circleColor 0 0 0 1
+    case (st ^. hover, st ^. swMode) of
+      (Just ci, SWTopo) ->
+        let Just dist = c ^? topoDists . ix ci
+            clr = exp $ -dist / (st ^. swSigma) ^ 2
+         in circleColor clr clr clr 1
+      (Just ci, SWAllFeatures) ->
+        let Just otherFs = st ^? clusters . ix ci . features
+            dist =
+              V.sum $ V.zipWith (\a b -> (a - b) ^ 2) (c ^. features) (otherFs)
+            clr = exp $ -dist / (st ^. swSigma) ^ 2
+         in circleColor clr clr clr 1
+      (Just ci, SWSelFeatures) ->
+        let Just otherFs = st ^? clusters . ix ci . features
+            sels = st ^. hiFeatures
+            dist =
+              V.sum
+                $ V.izipWith
+                    (\i a b ->
+                       if S.member i sels
+                         then (a - b) ^ 2
+                         else 0)
+                    (c ^. features)
+                    (otherFs)
+            clr = exp $ -dist / (st ^. swSigma) ^ 2
+         in circleColor clr clr clr 1
+      (_, _) -> circleColor 0 0 0 1
     glDrawArrays GL_TRIANGLE_FAN 0 (circleBufSteps + 2)
     {- star plot-}
     when (not $ M.null featmap) $ do
@@ -269,23 +292,25 @@ onEvent sz (MouseButtonEvent b) appst
   , ButtonLeft <- mouseButtonEventButton b
   , P p <- mouseButtonEventPos b =
     unRef appst $ \st ->
-      let (_, _, unscale) = scaleUnscale st
-       in case clusterAt (unscale $ unprojectIsotropicUnit sz p) st of
-            Just ci -> do
-              let Just action =
-                    st ^? clusters . ix ci . clusterSelected . to (Just . not)
-              modifyIORef appst $ painting .~ action
-              doPaint ci appst
-            Nothing -> do
-              modifyIORef appst $ clusters . each . clusterSelected .~ False
+      case st ^. hover of
+        Just ci -> do
+          let Just action =
+                st ^? clusters . ix ci . clusterSelected . to (Just . not)
+          modifyIORef appst $ painting .~ action
+          doPaint ci appst
+        Nothing -> do
+          modifyIORef appst $ clusters . each . clusterSelected .~ False
 onEvent sz (MouseMotionEvent b) appst
   | P p <- mouseMotionEventPos b =
     unRef appst $ \st ->
       let (_, _, unscale) = scaleUnscale st
-       in case clusterAt (unscale $ unprojectIsotropicUnit sz p) st of
-            Just ci -> do
-              doPaint ci appst
-            _ -> pure ()
+          ci' = clusterAt (unscale $ unprojectIsotropicUnit sz p) st
+       in do
+            modifyIORef appst $ hover .~ ci'
+            case ci' of
+              Just ci -> do
+                doPaint ci appst
+              _ -> pure ()
 onEvent _ _ _ = pure ()
 
 {- user interface -}
@@ -390,7 +415,27 @@ drawUI _ appst = do
                   pure () -- TODO
     whenM (button "add") $ do
       modifyIORef appst $ groupNames %~ flip V.snoc "group"
-  withWindowOpen "Sleepwalk" $ text "TODO"
+  withWindowOpen "Sleepwalk" $ do
+    text "Mode"
+    swm <- (^. swMode) <$> readIORef appst
+    for_
+      [ (SWOff, "Off")
+      , (SWAllFeatures, "All features")
+      , (SWSelFeatures, "Visible features")
+      , (SWTopo, "Topology")
+      ] $ \(val, lab) -> do
+      whenM (radioButton lab $ swm == val) $ modifyIORef appst $ swMode .~ val
+    text "Highlight distance"
+    withZoom appst swSigma $ \swls ->
+      void
+        $ sliderScalar
+            "##sigma"
+            ImGuiDataType_Float
+            swls
+            (pure 1e-2 :: IO Float)
+            (pure 1e2)
+            "%0.3g σ"
+            ImGuiSliderFlags_Logarithmic
   withWindowOpen "Data" $ do
     whenM (collapsingHeader "In selection" Nothing) $ do
       text "TODO"
