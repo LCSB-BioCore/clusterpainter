@@ -14,6 +14,7 @@ import Data.Char (chr, ord)
 import Data.Foldable (foldl', for_)
 import Data.IORef
 import qualified Data.Map.Strict as M
+import Data.Maybe (isJust)
 import Data.Semigroup
 import qualified Data.Set as S
 import qualified Data.Vector.Strict as V
@@ -415,6 +416,10 @@ drawUI _ appst = do
                   pure () -- TODO
     whenM (button "add") $ do
       modifyIORef appst $ groupNames %~ flip V.snoc "group"
+    --TODO permanent syncs
+    whenM ((^. syncOutFile . to isJust) <$> readIORef appst)
+      $ whenM (button "export to file")
+      $ readIORef appst >>= doOutput
   withWindowOpen "Sleepwalk" $ do
     text "Mode"
     swm <- (^. swMode) <$> readIORef appst

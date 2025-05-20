@@ -105,3 +105,20 @@ instance FromJSON FileState where
 instance ToJSON FileState where
   toJSON (FSt ig fs gs) =
     object ["groups" .= ig, "feature_names" .= fs, "group_names" .= gs]
+
+doOutput :: AppState -> IO ()
+doOutput st =
+  let fst =
+        FSt
+          { fsFeatures = st ^.. featureNames . each . to unpack
+          , fsGroups = st ^.. groupNames . each . to unpack
+          , fsClusterGroups =
+              st ^.. clusters
+                . each
+                . groups
+                . to (\s -> [S.member i s | i <- [0 .. ngroups - 1]])
+          }
+      ngroups = st ^. groupNames . to V.length
+   in case st ^. syncOutFile of
+        Just fn -> encodeFile fn fst
+        _ -> pure ()
