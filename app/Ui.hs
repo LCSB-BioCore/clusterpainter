@@ -13,6 +13,7 @@ import Data.Bits
 import Data.Char (chr, ord)
 import Data.Foldable (foldl', for_)
 import Data.IORef
+import Data.List (foldl1')
 import qualified Data.Map.Strict as M
 import Data.Maybe (isJust)
 import Data.Semigroup
@@ -22,10 +23,13 @@ import DearImGui
 import qualified DearImGui.FontAtlas as F
 import DearImGui.Internal.Text
 import qualified DearImGui.Raw.Font.GlyphRanges as GR
+import Foreign.C.Types
 import Foreign.Marshal.Array
 import Foreign.Ptr
 import Graphics.GL
 import SDL
+
+import Debug.Trace
 
 {- projection helpers -}
 v2rry f (V2 x y) = f x y
@@ -347,9 +351,15 @@ featureGroupColors st =
    in ( M.fromAscList $ zip (st ^. hiFeatures . to S.toList) featCols
       , M.fromAscList $ zip (st ^. hiGroups . to S.toList) groupCols)
 
+colorMarker cmap i =
+  case cmap M.!? i of
+    Nothing -> text "□"
+    Just col ->
+      textColored ((pure :: ImVec4 -> IO ImVec4) $ v4rry ImVec4 col) "■"
+
 drawUI _ appst = do
-  (featmap, groupmap) <- featureGroupColors <$> readIORef appst
-  --showDemoWindow
+  st <- readIORef appst
+  let (featmap, groupmap) = featureGroupColors st
   withWindowOpen "FPS" $ framerate >>= text . pack . show
   withWindowOpen "Features"
     $ withZoom appst featureNames
@@ -359,12 +369,7 @@ drawUI _ appst = do
           $ \i t ->
               withRef_ t $ \r ->
                 withID (pack $ show i) $ do
-                  case featmap M.!? i of
-                    Nothing -> text "□"
-                    Just col ->
-                      textColored
-                        ((pure :: ImVec4 -> IO ImVec4) $ v4rry ImVec4 col)
-                        "■"
+                  colorMarker featmap i
                   sameLine
                   inputText "" r 100
                   sameLine
@@ -380,12 +385,7 @@ drawUI _ appst = do
         $ \i t ->
             withRef_ t $ \r ->
               withID (pack $ show i) $ do
-                case groupmap M.!? i of
-                  Nothing -> text "□"
-                  Just col ->
-                    textColored
-                      ((pure :: ImVec4 -> IO ImVec4) $ v4rry ImVec4 col)
-                      "■"
+                colorMarker groupmap i
                 sameLine
                 inputText "" r 100
                 sameLine
@@ -418,9 +418,9 @@ drawUI _ appst = do
     whenM (button "add") $ do
       modifyIORef appst $ groupNames %~ flip V.snoc "group"
     --TODO permanent syncs
-    whenM ((^. syncOutFile . to isJust) <$> readIORef appst)
+    when (st ^. syncOutFile . to isJust)
       $ whenM (button "export to file")
-      $ readIORef appst >>= doOutput
+      $ doOutput st
   withWindowOpen "Sleepwalk" $ do
     text "Mode"
     swm <- (^. swMode) <$> readIORef appst
@@ -442,10 +442,58 @@ drawUI _ appst = do
             (pure 1e2)
             "%0.3g σ"
             ImGuiSliderFlags_Logarithmic
-  withWindowOpen "Data" $ do
-    whenM (collapsingHeader "In selection" Nothing) $ do
-      text "TODO"
-    whenM (collapsingHeader "By groups" Nothing) $ do
-      text "TODO"
-    whenM (collapsingHeader "By feature" Nothing) $ do
-      text "TODO"
+  withWindowOpen "Data"
+    $ withTable defTableOptions "##data" (succ $ st ^. hiFeatures ^. to S.size)
+    $ flip when
+    $ do
+      --TODO globalize the lows/ups I guess
+        let [flows, fhighs] =
+              map
+                (\f ->
+                   zipWith
+                     (V.zipWith f)
+                     (st ^.. clusters . each . featMeans)
+                     (st ^.. clusters
+                        . each
+                        . featVars
+                        . to (V.map ((4 *) . sqrt))))
+                [(-), (+)]
+            fmins = foldl1' min flows
+            fmaxs = foldl1' max fhighs
+            plotData fid gid =
+              let lb = fmins V.! fid
+                  rng = fmaxs V.! fid - lb
+                  xs = map ((+ lb) . (* rng)) [0,0.05 .. 1]
+                  gaussContrib x m v w = w * exp ((x - m) ^ 2 / negate v)
+                  contribAt x =
+                    sum
+                      $ st ^.. clusters
+                          . each
+                          . filtered (^. groups . to (S.member gid))
+                          . to
+                              (\c ->
+                                 gaussContrib
+                                   x
+                                   (c ^. featMeans . to (V.! fid))
+                                   (c ^. featVars . to (V.! fid))
+                                   (c ^. weight))
+               in map contribAt xs
+        tableNextColumn $ text "Group \\ Feature"
+        for_ (st ^. hiFeatures . to S.toAscList) $ \fid ->
+          tableNextColumn $ do
+            text (st ^. featureNames . to (V.! fid))
+            sameLine
+            colorMarker featmap fid
+      --TODO selection
+        for_ (st ^. hiGroups . to S.toAscList) $ \gid -> do
+          tableNextRow
+          let gname = st ^. groupNames . to (V.! gid)
+          tableNextColumn $ do
+            text gname
+            sameLine
+            colorMarker groupmap gid
+          for_ (st ^. hiFeatures . to S.toAscList) $ \fid ->
+            tableNextColumn
+              $ plotLines (pack $ "##" ++ show gid ++ "," ++ show fid)
+              $ map CFloat
+              $ plotData fid gid
