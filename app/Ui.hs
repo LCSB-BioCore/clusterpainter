@@ -164,8 +164,9 @@ renderSetup st = do
   glEnableVertexAttribArray 0
   modifyIORef st $ rendererData . rdCircleArr .~ arr
   -- rendering stuff
-  glClearColor 0.2 0.2 0.2 1.0
+  glClearColor 0.9 0.9 0.9 1.0
   -- imgui
+  styleColorsLight
   F.clear
   builder <- GR.new
   for_ [GR.Latin, GR.Cyrillic] $ GR.addRanges builder . GR.getBuiltin
@@ -215,7 +216,7 @@ renderApp' sz st = do
   circleRot 0
   {- selection painting -}
   cSz 0.666
-  circleColor 0.6 0.6 0.6 1
+  circleColor 0.666 0.666 0.666 1
   for_ (st ^.. clusters . to V.toList . each) $ \c ->
     when (c ^. clusterSelected) $ do
       v2rry cPos $ c ^. position
@@ -244,13 +245,13 @@ renderApp' sz st = do
     case (st ^. hover, st ^. swMode) of
       (Just ci, SWTopo) ->
         let Just dist = c ^? topoDists . ix ci
-            clr = exp $ -dist / (st ^. swSigma) ^ 2
+            clr = 1 - exp (-dist / (st ^. swSigma) ^ 2)
          in circleColor clr clr clr 1
       (Just ci, SWAllFeatures) ->
         let Just otherFs = st ^? clusters . ix ci . features
             dist =
               V.sum $ V.zipWith (\a b -> (a - b) ^ 2) (c ^. features) (otherFs)
-            clr = exp $ -dist / (st ^. swSigma) ^ 2
+            clr = 1 - exp (-dist / (st ^. swSigma) ^ 2)
          in circleColor clr clr clr 1
       (Just ci, SWSelFeatures) ->
         let Just otherFs = st ^? clusters . ix ci . features
@@ -264,9 +265,9 @@ renderApp' sz st = do
                          else 0)
                     (c ^. features)
                     (otherFs)
-            clr = exp $ -dist / (st ^. swSigma) ^ 2
+            clr = 1 - exp (-dist / (st ^. swSigma) ^ 2)
          in circleColor clr clr clr 1
-      (_, _) -> circleColor 0 0 0 1
+      (_, _) -> circleColor 1 1 1 1
     glDrawArrays GL_TRIANGLE_FAN 0 (circleBufSteps + 2)
     {- star plot-}
     when (not $ M.null featmap) $ do
@@ -340,7 +341,7 @@ featureGroupColors st =
       cols :: [V4 Float]
       cols =
         map
-          (\h -> hsv2rgb h 0.75 1 1)
+          (\h -> hsv2rgb h 0.9 0.9 1)
           [fromIntegral i / fromIntegral n | i <- [1 .. n]]
       (groupCols, featCols) = bresenhamSplit nFeats n cols
    in ( M.fromAscList $ zip (st ^. hiFeatures . to S.toList) featCols
