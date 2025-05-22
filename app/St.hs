@@ -62,9 +62,26 @@ emptySt =
 data RendererData = RD
   { _rdProgram :: GLuint
   , _rdCircleArr :: GLuint
-  } deriving (Show)
+  , _setProjection :: [Float] -> IO ()
+  , _circleSize :: Float -> IO ()
+  , _circlePos :: Float -> Float -> IO ()
+  , _circleRot :: Float -> IO ()
+  , _circleColor :: Float -> Float -> Float -> Float -> IO ()
+  }
 
-emptyRD = RD {_rdProgram = 0, _rdCircleArr = 0}
+instance Show RendererData where
+  show _ = "undefined"
+
+emptyRD =
+  RD
+    { _rdProgram = 0
+    , _rdCircleArr = 0
+    , _setProjection = \_ -> pure ()
+    , _circleSize = \_ -> pure ()
+    , _circlePos = \_ _ -> pure ()
+    , _circleRot = \_ -> pure ()
+    , _circleColor = \_ _ _ _ -> pure ()
+    }
 
 data Cluster = Cluster
   { _position :: V2 Float
