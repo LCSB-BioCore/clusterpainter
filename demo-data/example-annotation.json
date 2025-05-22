@@ -1,0 +1,31 @@
+{
+  "feature_names": [
+    "feature 1",
+    "feature 2",
+    "feature 3",
+    "feature 4",
+    "feature 5"
+  ],
+  "group_names": [
+    "lower half",
+    "middle"
+  ],
+  "groups": [
+    [ 0 ],
+    [ 0 ],
+    [],
+    [],
+    [ 0 ],
+    [ 0, 1 ],
+    [ 1 ],
+    [],
+    [ 0 ],
+    [ 0, 1 ],
+    [ 1 ],
+    [],
+    [ 0 ],
+    [ 0 ],
+    [],
+    []
+  ]
+}

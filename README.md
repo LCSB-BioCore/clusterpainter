@@ -51,11 +51,11 @@ cabal run clusterpainter
 ```
 
 To test the tool on a demo dataset (stashed in directory
-[`test-data/`](test-data/)), you can run:
+[`demo-data/`](demo-data/)), you can run:
 ```sh
 cabal run clusterpainter -- \
-  -f test-data/features.json \
-  -t test-data/topology.json
+  -f demo-data/features.json \
+  -t demo-data/topology.json
 ```
 
 ### Using `clusterpainter` for annotation
@@ -73,8 +73,8 @@ The output of your annotation will be saved to a file specified by option `-o`:
 
 ```sh
 cabal run clusterpainter -- \
-  -f test-data/features.json \
-  -t test-data/topology.json \
+  -f demo-data/features.json \
+  -t demo-data/topology.json \
   -o output-annotation.json
 ```
 
@@ -87,3 +87,6 @@ The output annotation is formatted as a JSON object, which contains:
   inner array with 0-based indexes of all groups that the cluster belongs to
   (the indexes can be tought of as offsets into the `group_names` array)
   in a given cluster.
+
+Example output is provided in
+[`example-annotation.json`](demo-data/example-annotation.json).
