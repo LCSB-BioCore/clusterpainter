@@ -30,6 +30,7 @@ data AppState = St
   , _swSigma :: Float
   , _swMode :: SWMode
   , _showWeights :: Bool
+  , _fontSize :: Float
   } deriving (Show)
 
 data SWMode
@@ -55,6 +56,7 @@ emptySt =
     , _swSigma = 1
     , _swMode = SWOff
     , _showWeights = False
+    , _fontSize = 20
     }
 
 data RendererData = RD

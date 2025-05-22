@@ -19,6 +19,7 @@ extra-doc-files: CHANGELOG.md
 executable clusterpainter
   main-is:          Main.hs
   other-modules:
+    Assets
     Config
     Lensref
     St
@@ -29,10 +30,12 @@ executable clusterpainter
   build-depends:
     , aeson
     , base
+    , bytestring
     , containers
     , dear-imgui
-    , lens
+    , file-embed
     , gl
+    , lens
     , optparse-applicative
     , sdl2
     , vector

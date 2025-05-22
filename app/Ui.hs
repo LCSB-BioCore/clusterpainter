@@ -3,6 +3,7 @@
 
 module Ui where
 
+import Assets
 import Lensref
 import St
 
@@ -10,6 +11,7 @@ import Control.Applicative
 import Control.Lens
 import Control.Monad (void, when)
 import Data.Bits
+import qualified Data.ByteString.Internal as BSI
 import Data.Char (chr, ord)
 import Data.Foldable (foldl', for_)
 import Data.IORef
@@ -22,14 +24,15 @@ import qualified Data.Vector.Strict as V
 import DearImGui
 import qualified DearImGui.FontAtlas as F
 import DearImGui.Internal.Text
+import qualified DearImGui.Raw.Font as RF
+import qualified DearImGui.Raw.Font.Config as RFC
 import qualified DearImGui.Raw.Font.GlyphRanges as GR
 import Foreign.C.Types
 import Foreign.Marshal.Array
 import Foreign.Ptr
+import GHC.ForeignPtr
 import Graphics.GL
 import SDL
-
-import Debug.Trace
 
 {- projection helpers -}
 v2rry f (V2 x y) = f x y
@@ -180,14 +183,15 @@ renderSetup st = do
   withCString "■ □" $ GR.addText builder
   rangesVec <- GR.buildRangesVector builder
   let ranges = GR.fromRangesVector rangesVec
-  --TODO carry the file
-  F.addFontFromFileTTF
-    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
-    20.0
-    Nothing
-    (Just ranges)
+      (fptr, flen) = BSI.toForeignPtr0 uiFont
+  fsz <- (^. fontSize . to CFloat) <$> readIORef st
+  fconf <- RFC.new
+  RFC.setFontDataOwnedByAtlas fconf $ CBool 0
+  withForeignPtr fptr $ \ptr ->
+    RF.addFontFromMemoryTTF (castPtr ptr, flen) fsz fconf ranges
   F.build
   GR.destroyRangesVector rangesVec
+  RFC.destroy fconf
   GR.destroy builder
 
 renderApp s appst = unRef appst $ renderApp' s

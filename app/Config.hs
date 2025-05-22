@@ -61,6 +61,7 @@ data Opts = Opts
   , inputFiles :: Either AnnotOpts FilePath
   , inFile :: Maybe FilePath
   , outFile :: Maybe FilePath
+  , uiFontSize :: Float
   } deriving (Show)
 
 opts = do
@@ -121,6 +122,14 @@ opts = do
           <> long "output"
           <> metavar "JSON"
           <> help "periodically save output into this file"
+  uiFontSize <-
+    option auto
+      $ short 'A'
+          <> long "font-size"
+          <> metavar "PIXELS"
+          <> help "UI font size for rendering"
+          <> value 20.0
+          <> showDefault
   pure Opts {..}
 
 parseOpts :: IO Opts
@@ -247,6 +256,7 @@ processOpts = do
           V.fromList
             $ zipWith V2 featureMins (zipWith (-) featureMaxs featureMins)
       , _positionRange = positionRange
+      , _fontSize = uiFontSize o
       }
 
 zipClusters ::
