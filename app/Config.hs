@@ -97,7 +97,9 @@ opts = do
                      <> long "default-variance"
                      <> metavar "FLOAT"
                      <> help
-                          "assume this variance in all clusters and all dimensions")
+                          "assume this variance in all clusters and all dimensions"
+                     <> value 1.0
+                     <> showDefault)
   meansFile <-
     optional . strOption
       $ short 'm'
