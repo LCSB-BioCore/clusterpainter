@@ -5,6 +5,8 @@
 to work as a human front-end for working with the intermediate results as
 produced by `remotesom`, or in general any other clustering methods.
 
+![clusterpainter screenshot showing a few clusters rendered as white circles, with features displayed inside as colorful star plots and grouping displayed with colored cluster borders ](media/screenshot.png)
+
 #### Acknowledgements
 
 `clusterpainter` was developed at [Bioinformatics
