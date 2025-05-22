@@ -84,19 +84,20 @@ opts = do
           <> metavar "JSON"
           <> help "cluster weights (typically member counts)"
   varsFile <-
-    Left
-      <$> option
-            auto
-            (short 'V'
-               <> long "default-variance"
-               <> metavar "FLOAT"
-               <> help "assume this variance in all clusters and all dimensions")
-      <|> Right
-            <$> strOption
-                  (short 'v'
-                     <> long "variances"
-                     <> metavar "JSON"
-                     <> help "read in-cluster variance values from this file")
+    Right
+      <$> strOption
+            (short 'v'
+               <> long "variances"
+               <> metavar "JSON"
+               <> help "read in-cluster variance values from this file")
+      <|> Left
+            <$> option
+                  auto
+                  (short 'V'
+                     <> long "default-variance"
+                     <> metavar "FLOAT"
+                     <> help
+                          "assume this variance in all clusters and all dimensions")
   meansFile <-
     optional . strOption
       $ short 'm'
