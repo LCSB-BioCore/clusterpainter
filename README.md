@@ -82,7 +82,8 @@ The output annotation is formatted as a JSON object, which contains:
 
 - array of defined group names (in key `group_names`)
 - array of user-defined feature names (key `feature_names`)
-- array of arrays with boolean group membership assignment (in key `groups`);
-  in the array, for each cluster, there's one inner array of length same as
-  `group_names`, with values `true` and `false` that mark the group membership
+- array of arrays with integer group indexes, that represents group membership
+  assignment (in key `groups`) -- in the array, for each cluster, there's one
+  inner array with 0-based indexes of all groups that the cluster belongs to
+  (the indexes can be tought of as offsets into the `group_names` array)
   in a given cluster.

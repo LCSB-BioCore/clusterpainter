@@ -193,7 +193,7 @@ processOpts = do
         fst <- decodeFile inf
         checkVecSz (inf ++ " groups") nc $ fsClusterGroups fst
         let ngs = length . head $ fsClusterGroups fst
-        checkMtxSz (inf ++ " groups") nc ngs $ fsClusterGroups fst
+        checkVecSz (inf ++ " groups") nc $ fsClusterGroups fst
         checkVecSz (inf ++ " feature names") nd $ fsFeatures fst
         checkVecSz (inf ++ " group names") ngs $ fsGroups fst
         pure fst
@@ -210,18 +210,20 @@ processOpts = do
             (Nothing, Nothing) -> pure ([], replicate nc [])
             (Just gnf, Nothing) -> do
               gns <- decodeFile gnf
-              pure (gns, replicate nc (replicate (length gns) False))
+              pure (gns, replicate nc [])
             (Nothing, Just gf) -> do
               gs <- decodeFile gf
               checkVecSz gf nc gs
-              let ngs = length (head gs)
-              checkMtxSz gf nc ngs gs
-              pure (map ((++) "group " . show) [1 .. ngs], gs)
+              let ngs = max 0 . succ . maximum $ concat gs
+                  checkGroups = filter $ liftA2 (&&) (>= 0) (< ngs)
+              pure (map ((++) "group " . show) [1 .. ngs], map checkGroups gs)
             (Just gnf, Just gf) -> do
               gns <- decodeFile gnf
               gs <- decodeFile gf
-              checkMtxSz gf nc (length gns) gs
-              pure (gns, gs)
+              checkVecSz gf nc gs
+              let ngs = length gns
+                  checkGroups = filter $ liftA2 (&&) (>= 0) (< ngs)
+              pure (gns, map checkGroups gs)
         pure FSt {fsClusterGroups = gs, fsFeatures = fns, fsGroups = gns}
   let featureMins = foldl1' (zipWith min) fs
       featureMaxs = foldl1' (zipWith max) fs
@@ -251,7 +253,7 @@ zipClusters ::
   -> [[Float]]
   -> [[Float]]
   -> [[Float]]
-  -> [[Bool]]
+  -> [[Int]]
   -> [Cluster]
 zipClusters (p:ps) (t:ts) (w:ws) (f:fs) (m:ms) (v:vs) (g:gs) =
   emptyCluster
@@ -261,7 +263,7 @@ zipClusters (p:ps) (t:ts) (w:ws) (f:fs) (m:ms) (v:vs) (g:gs) =
     , _features = V.fromList f
     , _featMeans = V.fromList m
     , _featVars = V.fromList v
-    , _groups = S.fromList [i | (i, mem) <- zip [0 ..] g, mem]
+    , _groups = S.fromList g
     }
     : zipClusters ps ts ws fs ms vs gs
 zipClusters _ _ _ _ _ _ _ = []

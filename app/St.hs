@@ -92,7 +92,7 @@ $(makeLenses ''RendererData)
 $(makeLenses ''Cluster)
 
 data FileState = FSt
-  { fsClusterGroups :: [[Bool]]
+  { fsClusterGroups :: [[Int]]
   , fsFeatures :: [String]
   , fsGroups :: [String]
   } deriving (Show)
@@ -112,13 +112,8 @@ doOutput st =
         FSt
           { fsFeatures = st ^.. featureNames . each . to unpack
           , fsGroups = st ^.. groupNames . each . to unpack
-          , fsClusterGroups =
-              st ^.. clusters
-                . each
-                . groups
-                . to (\s -> [S.member i s | i <- [0 .. ngroups - 1]])
+          , fsClusterGroups = st ^.. clusters . each . groups . to S.toList
           }
-      ngroups = st ^. groupNames . to V.length
    in case st ^. syncOutFile of
         Just fn -> encodeFile fn fst
         _ -> pure ()
