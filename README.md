@@ -3,7 +3,8 @@
 
 `clusterpainter` is a simple graphical cluster-annotation tool. It is supposed
 to work as a human front-end for working with the intermediate results as
-produced by `remotesom`, or in general any other clustering methods.
+produced by [`remotesom`](https://github.com/LCSB-BioCore/remotesom), or in
+general any other aggregative clustering method.
 
 ![clusterpainter screenshot showing a few clusters rendered as white circles, with features displayed inside as colorful star plots and grouping displayed with colored cluster borders ](media/screenshot.png)
 
