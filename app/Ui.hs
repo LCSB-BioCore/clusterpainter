@@ -217,6 +217,7 @@ renderApp' sz st = do
   let cPos :: Float -> Float -> IO ()
       cSz :: Float -> IO ()
       (cPos, cSz, _) = scaleUnscale st
+      maxWScale = recip . max 1e-3 . maximum $ st ^.. clusters . each . weight
   circleRot 0
   {- selection painting -}
   cSz 0.666
@@ -233,9 +234,14 @@ renderApp' sz st = do
       groupAngle = 360 / fromIntegral (M.size groupmap)
       nGroupSlices = ceiling $ groupAngle / circleBufStepDeg
   for_ (st ^.. clusters . each) $ \c -> do
+    let wScale =
+          if (st ^. showWeights)
+            then sqrt $ maxWScale * (c ^. weight)
+            else 1.0
+        cSzW = cSz . (wScale *)
     v2rry cPos $ c ^. position
     {- groups -}
-    cSz 0.48
+    cSzW 0.48
     when (not $ M.null groupmap)
       $ for_ (zip [0 ..] (M.toAscList groupmap))
       $ \(i, (gid, clr)) ->
@@ -245,7 +251,7 @@ renderApp' sz st = do
             glDrawArrays GL_TRIANGLE_FAN 0 (nGroupSlices + 2)
     circleRot 0
     {- sleepwalk background -}
-    cSz 0.4
+    cSzW 0.4
     case (st ^. hover, st ^. swMode) of
       (Just ci, SWTopo) ->
         let Just dist = c ^? topoDists . ix ci
@@ -279,7 +285,7 @@ renderApp' sz st = do
         v4rry circleColor clr
         circleRot (featAngle * i)
         let (V2 fmin frng) = franges V.! fid
-        cSz . (0.3 *) . sqrt $ ((c ^. features) V.! fid - fmin) / frng
+        cSzW . (0.3 *) . sqrt $ ((c ^. features) V.! fid - fmin) / frng
         glDrawArrays GL_TRIANGLE_FAN 0 (nFeatSlices + 2)
     circleRot 0
 
@@ -361,23 +367,23 @@ drawUI _ appst = do
   st <- readIORef appst
   let (featmap, groupmap) = featureGroupColors st
   withWindowOpen "FPS" $ framerate >>= text . pack . show
-  withWindowOpen "Features"
-    $ withZoom appst featureNames
-    $ \r ->
-        withVal_ r
-          $ V.imapM
-          $ \i t ->
-              withRef_ t $ \r ->
-                withID (pack $ show i) $ do
-                  colorMarker featmap i
-                  sameLine
-                  inputText "" r 100
-                  sameLine
-                  whenM (button "show") $ do
-                    modifyIORef appst $ hiFeatures %~ S.insert i
-                  sameLine
-                  whenM (button "hide") $ do
-                    modifyIORef appst $ hiFeatures %~ S.delete i
+  withWindowOpen "Features" $ do
+    withZoom appst showWeights $ checkbox "Scale by weights"
+    withZoom appst featureNames $ \r ->
+      withVal_ r
+        $ V.imapM
+        $ \i t ->
+            withRef_ t $ \r ->
+              withID (pack $ show i) $ do
+                colorMarker featmap i
+                sameLine
+                inputText "" r 100
+                sameLine
+                whenM (button "show") $ do
+                  modifyIORef appst $ hiFeatures %~ S.insert i
+                sameLine
+                whenM (button "hide") $ do
+                  modifyIORef appst $ hiFeatures %~ S.delete i
   withWindowOpen "Groups" $ do
     withZoom appst groupNames $ \r ->
       withVal_ r
@@ -485,7 +491,7 @@ drawUI _ appst = do
             text (st ^. featureNames . to (V.! fid))
             sameLine
             colorMarker featmap fid
-      --TODO selection
+        --TODO selection
         for_ (st ^. hiGroups . to S.toAscList) $ \gid -> do
           tableNextRow
           let gname = st ^. groupNames . to (V.! gid)

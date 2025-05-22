@@ -29,6 +29,7 @@ data AppState = St
   , _hover :: Maybe Int
   , _swSigma :: Float
   , _swMode :: SWMode
+  , _showWeights :: Bool
   } deriving (Show)
 
 data SWMode
@@ -53,6 +54,7 @@ emptySt =
     , _hover = Nothing
     , _swSigma = 1
     , _swMode = SWOff
+    , _showWeights = False
     }
 
 data RendererData = RD
