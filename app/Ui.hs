@@ -94,7 +94,7 @@ hsv2rgb h s v a =
 
 {- rendering (low-level) -}
 vertexShader =
-  "#version 410 core\n\
+  "#version 330 core\n\
  \ layout (location = 0) in vec3 pos;\n\
  \ uniform mat4 proj;\n\
  \ uniform float size;\n\
@@ -109,7 +109,7 @@ vertexShader =
  \ }"
 
 fragmentShader =
-  "#version 410 core\n\
+  "#version 330 core\n\
  \ out vec4 FragColor;\n\
  \ uniform vec4 color;\n\
  \ void main()\n\

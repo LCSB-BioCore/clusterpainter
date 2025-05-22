@@ -27,7 +27,8 @@ main = do
   let title = "Cluster painter"
   let config =
         defaultWindow
-          { windowGraphicsContext = OpenGLContext defaultOpenGL
+          { windowGraphicsContext =
+              OpenGLContext defaultOpenGL {glProfile = Core Normal 3 3}
           , windowResizable = True
           }
   bracket (createWindow title config) destroyWindow $ \window ->
