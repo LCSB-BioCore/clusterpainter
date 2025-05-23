@@ -1,0 +1,55 @@
+
+name: build
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    name: build for ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    env:
+      PROG_NAME: clusterpainter
+      BIN_NAME: clusterpainter-${{ github.ref_name }}-${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-24.04
+          - ubuntu-22.04
+          - macos-15
+          - macos-14
+          - macos-13
+          - windows-2025
+          - windows-2022
+          - windows-2019
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: haskell-actions/setup@v2
+        with:
+          ghc-version: '9.4'
+      - run: |
+          cabal build
+      - name: build (unix)
+        if: ${{ !contains(matrix.os, 'windows') }}
+        run: |
+          cp $( cabal list-bin ${{ env.PROG_NAME }} ) ${{ env.BIN_NAME }}
+          xz -9 -k ${{ env.BIN_NAME }}
+      - name: build (clippyos)
+        if: ${{ contains(matrix.os, 'windows') }}
+        run: |
+          cp $( cabal list-bin ${{ env.PROG_NAME }} ) ${{ env.BIN_NAME }}.exe
+          xz -9 -k ${{ env.BIN_NAME }}.exe
+      - name: release (unix)
+        if: ${{ !contains(matrix.os, 'windows') }}
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.BIN_NAME }}.xz
+      - name: release (clippyos)
+        if: ${{ contains(matrix.os, 'windows') }}
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.BIN_NAME }}.exe.xz
