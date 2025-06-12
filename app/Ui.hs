@@ -52,7 +52,7 @@ scaleUnscale st =
   let (vmin, vmax) = st ^. positionRange
       vmid@(V2 vmidx vmidy) = (vmin + vmax) / 2
       s@(V2 xs ys) = vmax - vmin
-      sc = min (1 / xs) (1 / ys) * 0.8 --TODO zoom?
+      sc = min (1 / xs) (1 / ys) * 0.9 --TODO zoom?
    in ( \cp posx posy ->
           cp ((posx - vmidx) * sc + 0.5) ((posy - vmidy) * sc + 0.5)
       , \cs size -> cs (size * sc)
@@ -120,8 +120,8 @@ fragmentShader =
  \ void main()\n\
  \ {\n\
  \    if(in_coord.x*in_coord.x+in_coord.y*in_coord.y >= 1) discard;\n\
- \    float a = atan(in_coord.y, in_coord.x)/(2*M_PI)+0.5;\n\
- \    if(a>angle) discard;\n\
+ \    float a = atan(in_coord.y, in_coord.x)/(2*M_PI);\n\
+ \    if(2*abs(a)>angle) discard;\n\
  \    FragColor = color;\n\
  \ }"
 
