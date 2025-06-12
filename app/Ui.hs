@@ -157,20 +157,15 @@ renderSetup st = do
   modifyIORef st
     $ rendererData . setProjection
         .~ flip withArray (glUniformMatrix4fv ul 1 GL_FALSE)
-  print ul
   ul <- withCString "size" $ glGetUniformLocation prog
   modifyIORef st $ rendererData . circleSize .~ glUniform1f ul
-  print ul
   ul <- withCString "trans" $ glGetUniformLocation prog
   modifyIORef st $ rendererData . circlePos .~ glUniform2f ul
-  print ul
   ul <- withCString "rot" $ glGetUniformLocation prog
   modifyIORef st
     $ rendererData . circleRot .~ (glUniform2f ul <$> cos <*> sin) . deg2rad
-  print ul
   ul <- withCString "color" $ glGetUniformLocation prog
   modifyIORef st $ rendererData . circleColor .~ glUniform4f ul
-  print ul
   -- array&data
   [arr] <- withArray [0] $ \a -> glGenVertexArrays 1 a >> peekArray 1 a
   [buf] <- withArray [0] $ \a -> glGenBuffers 1 a >> peekArray 1 a
