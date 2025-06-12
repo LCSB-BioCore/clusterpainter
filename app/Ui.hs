@@ -94,26 +94,34 @@ hsv2rgb h s v a =
 
 {- rendering (low-level) -}
 vertexShader =
-  "#version 330 core\n\
+  "#version 410 core\n\
  \ layout (location = 0) in vec3 pos;\n\
  \ uniform mat4 proj;\n\
  \ uniform float size;\n\
  \ uniform vec2 trans;\n\
  \ uniform vec2 rot;\n\
+ \ out vec2 in_coord;\n\
  \ void main()\n\
  \ {\n\
  \    gl_Position = proj*vec4(\n\
  \      trans.x+size*(pos.x*rot.x+pos.y*rot.y),\n\
  \      trans.y+size*(pos.y*rot.x-pos.x*rot.y),\n\
  \      pos.z, 1.0);\n\
+ \    in_coord = pos.xy;\n\
  \ }"
 
 fragmentShader =
-  "#version 330 core\n\
+  "#version 410 core\n\
+ \ #define M_PI 3.1415926535897932384626433832795\n\
  \ out vec4 FragColor;\n\
  \ uniform vec4 color;\n\
+ \ uniform float angle;\n\
+ \ in vec2 in_coord;\n\
  \ void main()\n\
  \ {\n\
+ \    if(in_coord.x*in_coord.x+in_coord.y*in_coord.y >= 1) discard;\n\
+ \    float a = atan(in_coord.y, in_coord.x)/(2*M_PI)+0.5;\n\
+ \    if(a>angle) discard;\n\
  \    FragColor = color;\n\
  \ }"
 
@@ -121,15 +129,13 @@ c2i = fromIntegral . ord
 
 i2c = chr . fromIntegral
 
-circleBuf step =
-  [0, 0]
-    ++ concatMap (liftA2 (:) cos $ pure . sin) (map deg2rad [0,step .. 360])
+quadBuf = [-1, -1, -1, 1, 1, -1, 1, 1]
 
 circleBufStepDeg = 10
 
 circleBufSteps = 360 `div` circleBufStepDeg
 
-deg2rad x = pi * x / 180
+ratio2rad = (2 * pi *)
 
 renderSetup st = do
   -- shaders first
@@ -163,15 +169,17 @@ renderSetup st = do
   modifyIORef st $ rendererData . circlePos .~ glUniform2f ul
   ul <- withCString "rot" $ glGetUniformLocation prog
   modifyIORef st
-    $ rendererData . circleRot .~ (glUniform2f ul <$> cos <*> sin) . deg2rad
+    $ rendererData . circleRot .~ (glUniform2f ul <$> cos <*> sin) . ratio2rad
   ul <- withCString "color" $ glGetUniformLocation prog
   modifyIORef st $ rendererData . circleColor .~ glUniform4f ul
+  ul <- withCString "angle" $ glGetUniformLocation prog
+  modifyIORef st $ rendererData . circleAngle .~ glUniform1f ul
   -- array&data
   [arr] <- withArray [0] $ \a -> glGenVertexArrays 1 a >> peekArray 1 a
   [buf] <- withArray [0] $ \a -> glGenBuffers 1 a >> peekArray 1 a
   glBindVertexArray arr
   glBindBuffer GL_ARRAY_BUFFER buf
-  withArrayLen (circleBuf circleBufStepDeg :: [Float]) $ \n a ->
+  withArrayLen (quadBuf :: [Float]) $ \n a ->
     glBufferData GL_ARRAY_BUFFER (4 * fromIntegral n) (castPtr a) GL_STATIC_DRAW
   glVertexAttribPointer 0 2 GL_FLOAT GL_FALSE 8 nullPtr
   glEnableVertexAttribArray 0
@@ -230,21 +238,21 @@ renderApp' sz st = do
       maxWScale = recip . max 1e-3 . maximum $ st ^.. clusters . each . weight
       cRt = st ^. rendererData . circleRot
       cCl = st ^. rendererData . circleColor
-  cRt 0
+      cAg = st ^. rendererData . circleAngle
   {- selection painting -}
+  cRt 0
+  cAg 1
   cSz 0.666
   cCl 0.666 0.666 0.666 1
   for_ (st ^.. clusters . to V.toList . each) $ \c ->
     when (c ^. clusterSelected) $ do
       v2rry cPos $ c ^. position
-      glDrawArrays GL_TRIANGLE_FAN 0 (circleBufSteps + 2)
+      glDrawArrays GL_TRIANGLE_STRIP 0 4
   {- cluster painting -}
   let (featmap, groupmap) = featureGroupColors st
-      featAngle = 360 / fromIntegral (M.size featmap)
-      nFeatSlices = ceiling $ featAngle / circleBufStepDeg
+      featAngle = 1 / fromIntegral (M.size featmap)
       franges = st ^. featureRanges
-      groupAngle = 360 / fromIntegral (M.size groupmap)
-      nGroupSlices = ceiling $ groupAngle / circleBufStepDeg
+      groupAngle = 1 / fromIntegral (M.size groupmap)
   for_ (st ^.. clusters . each) $ \c -> do
     let wScale =
           if (st ^. showWeights)
@@ -253,6 +261,7 @@ renderApp' sz st = do
         cSzW = cSz . (wScale *)
     v2rry cPos $ c ^. position
     {- groups -}
+    cAg groupAngle
     cSzW 0.48
     when (not $ M.null groupmap)
       $ for_ (zip [0 ..] (M.toAscList groupmap))
@@ -260,9 +269,10 @@ renderApp' sz st = do
           when (c ^. groups . to (S.member gid)) $ do
             v4rry cCl clr
             cRt (groupAngle * i)
-            glDrawArrays GL_TRIANGLE_FAN 0 (nGroupSlices + 2)
+            glDrawArrays GL_TRIANGLE_STRIP 0 4 --(nGroupSlices + 2)
     cRt 0
     {- sleepwalk background -}
+    cAg 1
     cSzW 0.4
     case (st ^. hover, st ^. swMode) of
       (Just ci, SWTopo) ->
@@ -290,15 +300,16 @@ renderApp' sz st = do
             clr = 1 - exp (-dist / (st ^. swSigma) ^ 2)
          in cCl clr clr clr 1
       (_, _) -> cCl 1 1 1 1
-    glDrawArrays GL_TRIANGLE_FAN 0 (circleBufSteps + 2)
+    glDrawArrays GL_TRIANGLE_STRIP 0 4 -- (circleBufSteps + 2)
     {- star plot-}
+    cAg featAngle
     when (not $ M.null featmap) $ do
       for_ (zip [0 ..] (M.toAscList featmap)) $ \(i, (fid, clr)) -> do
         v4rry cCl clr
         cRt (featAngle * i)
         let (V2 fmin frng) = franges V.! fid
         cSzW . (0.3 *) . sqrt $ ((c ^. features) V.! fid - fmin) / frng
-        glDrawArrays GL_TRIANGLE_FAN 0 (nFeatSlices + 2)
+        glDrawArrays GL_TRIANGLE_STRIP 0 4 --(nFeatSlices + 2)
     cRt 0
 
 doPaint ci appst =

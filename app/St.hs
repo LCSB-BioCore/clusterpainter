@@ -67,6 +67,7 @@ data RendererData = RD
   , _circlePos :: Float -> Float -> IO ()
   , _circleRot :: Float -> IO ()
   , _circleColor :: Float -> Float -> Float -> Float -> IO ()
+  , _circleAngle :: Float -> IO ()
   }
 
 instance Show RendererData where
@@ -81,6 +82,7 @@ emptyRD =
     , _circlePos = \_ _ -> pure ()
     , _circleRot = \_ -> pure ()
     , _circleColor = \_ _ _ _ -> pure ()
+    , _circleAngle = \_ -> pure ()
     }
 
 data Cluster = Cluster
