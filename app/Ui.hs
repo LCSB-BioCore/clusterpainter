@@ -11,6 +11,7 @@ import Control.Applicative
 import Control.Lens
 import Control.Monad (void, when)
 import Data.Bits
+import Data.Bool (bool)
 import qualified Data.ByteString.Internal as BSI
 import Data.Char (chr, ord)
 import Data.Foldable (foldl', for_)
@@ -77,23 +78,18 @@ hsv2rgb h s v a =
   where
     clr off =
       let hc = h6 - off
-       in if hc > 3
-            then bump (hc - 6)
-            else bump hc
-    bump x =
-      let a = abs x
-       in if a < 1
-            then 1
-            else if a < 2
-                   then 2 - a
-                   else 0
+       in bump
+            (if hc > 3
+               then hc - 6
+               else hc)
+    bump = min 1 . max 0 . (+ negate 1) . abs
     ub = v
     lb = ub * (1 - s)
     scale = ub - lb
     h6 = h * 6
 
 {- rendering (low-level) -}
-vertexShader =
+vertexShaderWithCoords =
   "#version 430 core\n\
  \ layout (location = 0) in vec3 pos;\n\
  \ uniform mat4 proj;\n\
@@ -103,24 +99,21 @@ vertexShader =
  \ void main()\n\
  \ {\n\
  \    gl_Position = proj*vec4(\n\
- \      trans.x+size*(pos.x+pos.y),\n\
- \      trans.y+size*(pos.y-pos.x),\n\
+ \      trans.x+size*pos.x,\n\
+ \      trans.y+size*pos.y,\n\
  \      pos.z, 1.0);\n\
  \    in_coord = pos.xy;\n\
  \ }"
 
-fragmentShaderFullColor =
+fragmentShaderFlatColor =
   "#version 430 core\n\
  \ #define M_PI 3.1415926535897932384626433832795\n\
  \ out vec4 FragColor;\n\
  \ uniform vec4 color;\n\
- \ uniform float angle;\n\
  \ in vec2 in_coord;\n\
  \ void main()\n\
  \ {\n\
  \    if(in_coord.x*in_coord.x+in_coord.y*in_coord.y >= 1) discard;\n\
- \    float a = atan(in_coord.y, in_coord.x)/(2*M_PI);\n\
- \    if(2*abs(a)>angle) discard;\n\
  \    FragColor = color;\n\
  \ }"
 
@@ -128,16 +121,21 @@ fragmentShaderStar =
   "#version 430 core\n\
  \ #define M_PI 3.1415926535897932384626433832795\n\
  \ out vec4 FragColor;\n\
- \ uniform int n_slices;\n\
- \ layout(std430, binding=0) buffer colorLayout {int colors[]; }; \n\
- \ layout(std430, binding=1) buffer sizeLayout {int sizes[]; }; \n\
+ \ uniform int slices;\n\
+ \ layout(std430, binding=0) buffer colorLayout { float colors[]; }; \n\
+ \ layout(std430, binding=1) buffer sizeLayout { float sizes[]; }; \n\
  \ in vec2 in_coord;\n\
  \ void main()\n\
  \ {\n\
- \    if(in_coord.x*in_coord.x+in_coord.y*in_coord.y >= 1) discard;\n\
- \    int slice = n_slices*(atan(in_coord.y, in_coord.x)/(2*M_PI)+0.5);\n\
- \    if(2*abs(a)>angle) discard;\n\
- \    FragColor = color;\n\
+ \    int slice = int(slices*(atan(in_coord.y, in_coord.x)/(2*M_PI)+0.5));\n\
+ \    if(slice < 0 || slice >= slices) discard;\n\
+ \    if(in_coord.x*in_coord.x+in_coord.y*in_coord.y >= sizes[slice]*sizes[slice]) discard;\n\
+ \    float ub = 0.9;\n\
+ \    float lb = ub * 0.1;\n\
+ \    vec3 col = vec3(colors[slice])*6-vec3(0,2,4);\n\
+ \    col = vec3(col.x>3 ? col.x-6 : col.x, col.y>3 ? col.y-6 : col.y, col.z>3 ? col.z-6 : col.z);\n\
+ \    col = max(min((abs(col)-1), 1.0), 0.0)*(ub-lb)+lb;\n\
+ \    FragColor = vec4(col.x,col.y,col.z, 1.0);\n\
  \ }"
 
 c2i = fromIntegral . ord
@@ -152,8 +150,7 @@ circleBufSteps = 360 `div` circleBufStepDeg
 
 ratio2rad = (2 * pi *)
 
-renderSetup st = do
-  -- shaders first
+makeShaderProgram vertexShader fragmentShader = do
   [vs, fs] <- traverse glCreateShader [GL_VERTEX_SHADER, GL_FRAGMENT_SHADER]
   for_ [(vs, vertexShader), (fs, fragmentShader)] $ \(s, src) ->
     withArray (map c2i src ++ [0]) $ \psrc ->
@@ -172,23 +169,55 @@ renderSetup st = do
   traverse (glAttachShader prog) [vs, fs]
   glLinkProgram prog
   traverse glDeleteShader [vs, fs]
-  modifyIORef st $ rendererData . rdProgram .~ prog
+  pure prog
+
+renderSetup st = do
+  -- shaders first
+  progFlat <- makeShaderProgram vertexShaderWithCoords fragmentShaderFlatColor
+  modifyIORef st $ rendererData . rdFlatProgram .~ progFlat
+  progStar <- makeShaderProgram vertexShaderWithCoords fragmentShaderStar
+  modifyIORef st $ rendererData . rdStarProgram .~ progStar
   -- prepare shader helpers
-  ul <- withCString "proj" $ glGetUniformLocation prog
+  let getUniformLocation prog name =
+        withCString name $ glGetUniformLocation prog
+  for_
+    [ (progFlat, flatProjection, flatSize, flatPos)
+    , (progStar, starProjection, starSize, starPos)
+    ] $ \(prog, setProj, setSize, setPos) -> do
+    ul <- getUniformLocation prog "proj"
+    modifyIORef st
+      $ rendererData . setProj
+          .~ flip withArray (glUniformMatrix4fv ul 1 GL_FALSE)
+    ul <- getUniformLocation prog "size"
+    modifyIORef st $ rendererData . setSize .~ glUniform1f ul
+    ul <- getUniformLocation prog "trans"
+    modifyIORef st $ rendererData . setPos .~ glUniform2f ul
+  ul <- getUniformLocation progFlat "color"
+  modifyIORef st $ rendererData . flatColor .~ glUniform4f ul
+  ul <- getUniformLocation progStar "slices"
+  modifyIORef st $ rendererData . starSlices .~ glUniform1i ul . fromIntegral
+  [colbuf, sizebuf] <-
+    withArray [0, 0] $ \a -> glGenBuffers 2 a >> peekArray 2 a
   modifyIORef st
-    $ rendererData . setProjection
-        .~ flip withArray (glUniformMatrix4fv ul 1 GL_FALSE)
-  ul <- withCString "size" $ glGetUniformLocation prog
-  modifyIORef st $ rendererData . circleSize .~ glUniform1f ul
-  ul <- withCString "trans" $ glGetUniformLocation prog
-  modifyIORef st $ rendererData . circlePos .~ glUniform2f ul
-  ul <- withCString "rot" $ glGetUniformLocation prog
+    $ rendererData . starColors .~ \cs -> do
+        glBindBuffer GL_SHADER_STORAGE_BUFFER colbuf
+        withArrayLen cs $ \n a ->
+          glBufferData
+            GL_SHADER_STORAGE_BUFFER
+            (4 * fromIntegral n)
+            (castPtr a)
+            GL_STREAM_DRAW
+        glBindBufferBase GL_SHADER_STORAGE_BUFFER 0 colbuf
   modifyIORef st
-    $ rendererData . circleRot .~ (glUniform2f ul <$> cos <*> sin) . ratio2rad
-  ul <- withCString "color" $ glGetUniformLocation prog
-  modifyIORef st $ rendererData . circleColor .~ glUniform4f ul
-  ul <- withCString "angle" $ glGetUniformLocation prog
-  modifyIORef st $ rendererData . circleAngle .~ glUniform1f ul
+    $ rendererData . starSizes .~ \ss -> do
+        glBindBuffer GL_SHADER_STORAGE_BUFFER sizebuf
+        withArrayLen ss $ \n a ->
+          glBufferData
+            GL_SHADER_STORAGE_BUFFER
+            (4 * fromIntegral n)
+            (castPtr a)
+            GL_STREAM_DRAW
+        glBindBufferBase GL_SHADER_STORAGE_BUFFER 1 sizebuf
   -- array&data
   [arr] <- withArray [0] $ \a -> glGenVertexArrays 1 a >> peekArray 1 a
   [buf] <- withArray [0] $ \a -> glGenBuffers 1 a >> peekArray 1 a
@@ -198,7 +227,7 @@ renderSetup st = do
     glBufferData GL_ARRAY_BUFFER (4 * fromIntegral n) (castPtr a) GL_STATIC_DRAW
   glVertexAttribPointer 0 2 GL_FLOAT GL_FALSE 8 nullPtr
   glEnableVertexAttribArray 0
-  modifyIORef st $ rendererData . rdCircleArr .~ arr
+  modifyIORef st $ rendererData . rdCircleArray .~ arr
   -- rendering stuff
   glClearColor 0.9 0.9 0.9 1.0
   -- imgui
@@ -242,64 +271,64 @@ unprojectIsotropicUnit sz pt = do
 
 renderApp' sz st = do
   glClear (GL_COLOR_BUFFER_BIT .|. GL_DEPTH_BUFFER_BIT)
-  glUseProgram (st ^. rendererData . rdProgram)
-  glBindVertexArray (st ^. rendererData . rdCircleArr)
-  isotropicUnitProjection (st ^. rendererData . setProjection) sz
-  let cPos :: Float -> Float -> IO ()
-      cSz :: Float -> IO ()
-      (cPos', cSz', _) = scaleUnscale st
-      cPos = cPos' (st ^. rendererData . circlePos)
-      cSz = cSz' (st ^. rendererData . circleSize)
+  glBindVertexArray (st ^. rendererData . rdCircleArray)
+  let setupProgram which proj = do
+        glUseProgram (st ^. rendererData . which)
+        isotropicUnitProjection (st ^. rendererData . proj) sz
+  let (cPos', cSz', _) = scaleUnscale st
+      fPos = cPos' (st ^. rendererData . flatPos)
+      fSz = cSz' (st ^. rendererData . flatSize)
+      fCl = st ^. rendererData . flatColor
+      sPos = cPos' (st ^. rendererData . starPos)
+      sSz = cSz' (st ^. rendererData . starSize)
+      sN = st ^. rendererData . starSlices
+      sSzs = st ^. rendererData . starSizes
+      sCls = st ^. rendererData . starColors
       maxWScale = recip . max 1e-3 . maximum $ st ^.. clusters . each . weight
-      cRt = st ^. rendererData . circleRot
-      cCl = st ^. rendererData . circleColor
-      cAg = st ^. rendererData . circleAngle
   {- selection painting -}
-  cRt 0
-  cAg 1
-  cSz 0.666
-  cCl 0.666 0.666 0.666 1
+  setupProgram rdFlatProgram flatProjection
+  fSz 0.666
+  fCl 0.666 0.666 0.666 1
   for_ (st ^.. clusters . to V.toList . each) $ \c ->
     when (c ^. clusterSelected) $ do
-      v2rry cPos $ c ^. position
+      v2rry fPos $ c ^. position
       glDrawArrays GL_TRIANGLE_STRIP 0 4
-  {- cluster painting -}
-  let (featmap, groupmap) = featureGroupColors st
-      featAngle = 1 / fromIntegral (M.size featmap)
+  {- cluster painting helpers -}
+  let (featmap, groupmap) = featureGroupColors1 st
+      nFeats = M.size featmap
+      nGroups = M.size groupmap
       franges = st ^. featureRanges
-      groupAngle = 1 / fromIntegral (M.size groupmap)
+      wScale c =
+        if (st ^. showWeights)
+          then sqrt $ maxWScale * (c ^. weight)
+          else 1.0
+  {- groups -}
+  when (not $ M.null groupmap) $ do
+    setupProgram rdStarProgram starProjection
+    sN nGroups
+    sCls (M.elems groupmap)
+    for_ (st ^.. clusters . each) $ \c -> do
+      v2rry sPos $ c ^. position
+      sSz $ wScale c * 0.4 + 0.08
+      sSzs . map (\gid -> c ^. groups . to (bool 0 1 . S.member gid))
+        $ M.keys groupmap
+      glDrawArrays GL_TRIANGLE_STRIP 0 4
+  {- sleepwalk background -}
+  setupProgram rdFlatProgram flatProjection
   for_ (st ^.. clusters . each) $ \c -> do
-    let wScale =
-          if (st ^. showWeights)
-            then sqrt $ maxWScale * (c ^. weight)
-            else 1.0
-        cSzW = cSz . (wScale *)
-    v2rry cPos $ c ^. position
-    {- groups -}
-    cAg groupAngle
-    cSzW 0.48
-    when (not $ M.null groupmap)
-      $ for_ (zip [0 ..] (M.toAscList groupmap))
-      $ \(i, (gid, clr)) ->
-          when (c ^. groups . to (S.member gid)) $ do
-            v4rry cCl clr
-            cRt (groupAngle * i)
-            glDrawArrays GL_TRIANGLE_STRIP 0 4 --(nGroupSlices + 2)
-    cRt 0
-    {- sleepwalk background -}
-    cAg 1
-    cSzW 0.4
+    fSz $ wScale c * 0.4
+    v2rry fPos $ c ^. position
     case (st ^. hover, st ^. swMode) of
       (Just ci, SWTopo) ->
         let Just dist = c ^? topoDists . ix ci
             clr = 1 - exp (-dist / (st ^. swSigma) ^ 2)
-         in cCl clr clr clr 1
+         in fCl clr clr clr 1
       (Just ci, SWAllFeatures) ->
         let Just otherFs = st ^? clusters . ix ci . features
             dist =
               V.sum $ V.zipWith (\a b -> (a - b) ^ 2) (c ^. features) (otherFs)
             clr = 1 - exp (-dist / (st ^. swSigma) ^ 2)
-         in cCl clr clr clr 1
+         in fCl clr clr clr 1
       (Just ci, SWSelFeatures) ->
         let Just otherFs = st ^? clusters . ix ci . features
             sels = st ^. hiFeatures
@@ -313,19 +342,24 @@ renderApp' sz st = do
                     (c ^. features)
                     (otherFs)
             clr = 1 - exp (-dist / (st ^. swSigma) ^ 2)
-         in cCl clr clr clr 1
-      (_, _) -> cCl 1 1 1 1
-    glDrawArrays GL_TRIANGLE_STRIP 0 4 -- (circleBufSteps + 2)
-    {- star plot-}
-    cAg featAngle
-    when (not $ M.null featmap) $ do
-      for_ (zip [0 ..] (M.toAscList featmap)) $ \(i, (fid, clr)) -> do
-        v4rry cCl clr
-        cRt (featAngle * i)
-        let (V2 fmin frng) = franges V.! fid
-        cSzW . (0.3 *) . sqrt $ ((c ^. features) V.! fid - fmin) / frng
-        glDrawArrays GL_TRIANGLE_STRIP 0 4 --(nFeatSlices + 2)
-    cRt 0
+         in fCl clr clr clr 1
+      (_, _) -> fCl 1 1 1 1
+    glDrawArrays GL_TRIANGLE_STRIP 0 4
+  {- star plots -}
+  when (not $ M.null featmap) $ do
+    setupProgram rdStarProgram starProjection
+    sN nFeats
+    sCls (M.elems featmap)
+    for_ (st ^.. clusters . each) $ \c -> do
+      v2rry sPos $ c ^. position
+      sSz $ wScale c * 0.35
+      sSzs
+        . map
+            (\fid ->
+               let (V2 fmin frng) = franges V.! fid
+                in sqrt $ ((c ^. features . to (V.! fid) - fmin) / frng))
+        $ M.keys featmap
+      glDrawArrays GL_TRIANGLE_STRIP 0 4
 
 doPaint ci appst =
   unRef appst $ \st -> do
@@ -380,6 +414,17 @@ bresenhamSplit k n xs
       | otherwise =
         let (as, bs) = go (d + 2 * k) xs
          in (x : as, bs)
+
+--TODO unify with below
+featureGroupColors1 :: AppState -> (M.Map Int Float, M.Map Int Float)
+featureGroupColors1 st =
+  let nFeats = st ^. hiFeatures . to S.size
+      nGroups = st ^. hiGroups . to S.size
+      n = nFeats + nGroups
+      cols = [fromIntegral i / fromIntegral n | i <- [1 .. n]]
+      (groupCols, featCols) = bresenhamSplit nFeats n cols
+   in ( M.fromAscList $ zip (st ^. hiFeatures . to S.toList) featCols
+      , M.fromAscList $ zip (st ^. hiGroups . to S.toList) groupCols)
 
 featureGroupColors :: AppState -> (M.Map Int (V4 Float), M.Map Int (V4 Float))
 featureGroupColors st =

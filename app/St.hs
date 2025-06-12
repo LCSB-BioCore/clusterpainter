@@ -60,14 +60,19 @@ emptySt =
     }
 
 data RendererData = RD
-  { _rdProgram :: GLuint
-  , _rdCircleArr :: GLuint
-  , _setProjection :: [Float] -> IO ()
-  , _circleSize :: Float -> IO ()
-  , _circlePos :: Float -> Float -> IO ()
-  , _circleRot :: Float -> IO ()
-  , _circleColor :: Float -> Float -> Float -> Float -> IO ()
-  , _circleAngle :: Float -> IO ()
+  { _rdFlatProgram :: GLuint
+  , _rdStarProgram :: GLuint
+  , _rdCircleArray :: GLuint
+  , _flatProjection :: [Float] -> IO ()
+  , _starProjection :: [Float] -> IO ()
+  , _flatSize :: Float -> IO ()
+  , _starSize :: Float -> IO ()
+  , _flatPos :: Float -> Float -> IO ()
+  , _starPos :: Float -> Float -> IO ()
+  , _flatColor :: Float -> Float -> Float -> Float -> IO ()
+  , _starSlices :: Int -> IO ()
+  , _starSizes :: [Float] -> IO ()
+  , _starColors :: [Float] -> IO ()
   }
 
 instance Show RendererData where
@@ -75,14 +80,19 @@ instance Show RendererData where
 
 emptyRD =
   RD
-    { _rdProgram = 0
-    , _rdCircleArr = 0
-    , _setProjection = \_ -> pure ()
-    , _circleSize = \_ -> pure ()
-    , _circlePos = \_ _ -> pure ()
-    , _circleRot = \_ -> pure ()
-    , _circleColor = \_ _ _ _ -> pure ()
-    , _circleAngle = \_ -> pure ()
+    { _rdFlatProgram = 0
+    , _rdStarProgram = 0
+    , _rdCircleArray = 0
+    , _flatProjection = \_ -> pure ()
+    , _starProjection = \_ -> pure ()
+    , _flatSize = \_ -> pure ()
+    , _starSize = \_ -> pure ()
+    , _flatPos = \_ _ -> pure ()
+    , _starPos = \_ _ -> pure ()
+    , _flatColor = \_ _ _ _ -> pure ()
+    , _starSlices = \_ -> pure ()
+    , _starSizes = \_ -> pure ()
+    , _starColors = \_ -> pure ()
     }
 
 data Cluster = Cluster
