@@ -94,24 +94,23 @@ hsv2rgb h s v a =
 
 {- rendering (low-level) -}
 vertexShader =
-  "#version 410 core\n\
+  "#version 430 core\n\
  \ layout (location = 0) in vec3 pos;\n\
  \ uniform mat4 proj;\n\
  \ uniform float size;\n\
  \ uniform vec2 trans;\n\
- \ uniform vec2 rot;\n\
  \ out vec2 in_coord;\n\
  \ void main()\n\
  \ {\n\
  \    gl_Position = proj*vec4(\n\
- \      trans.x+size*(pos.x*rot.x+pos.y*rot.y),\n\
- \      trans.y+size*(pos.y*rot.x-pos.x*rot.y),\n\
+ \      trans.x+size*(pos.x+pos.y),\n\
+ \      trans.y+size*(pos.y-pos.x),\n\
  \      pos.z, 1.0);\n\
  \    in_coord = pos.xy;\n\
  \ }"
 
-fragmentShader =
-  "#version 410 core\n\
+fragmentShaderFullColor =
+  "#version 430 core\n\
  \ #define M_PI 3.1415926535897932384626433832795\n\
  \ out vec4 FragColor;\n\
  \ uniform vec4 color;\n\
@@ -121,6 +120,22 @@ fragmentShader =
  \ {\n\
  \    if(in_coord.x*in_coord.x+in_coord.y*in_coord.y >= 1) discard;\n\
  \    float a = atan(in_coord.y, in_coord.x)/(2*M_PI);\n\
+ \    if(2*abs(a)>angle) discard;\n\
+ \    FragColor = color;\n\
+ \ }"
+
+fragmentShaderStar =
+  "#version 430 core\n\
+ \ #define M_PI 3.1415926535897932384626433832795\n\
+ \ out vec4 FragColor;\n\
+ \ uniform int n_slices;\n\
+ \ layout(std430, binding=0) buffer colorLayout {int colors[]; }; \n\
+ \ layout(std430, binding=1) buffer sizeLayout {int sizes[]; }; \n\
+ \ in vec2 in_coord;\n\
+ \ void main()\n\
+ \ {\n\
+ \    if(in_coord.x*in_coord.x+in_coord.y*in_coord.y >= 1) discard;\n\
+ \    int slice = n_slices*(atan(in_coord.y, in_coord.x)/(2*M_PI)+0.5);\n\
  \    if(2*abs(a)>angle) discard;\n\
  \    FragColor = color;\n\
  \ }"
