@@ -198,26 +198,19 @@ renderSetup st = do
   modifyIORef st $ rendererData . starSlices .~ glUniform1i ul . fromIntegral
   [colbuf, sizebuf] <-
     withArray [0, 0] $ \a -> glGenBuffers 2 a >> peekArray 2 a
-  modifyIORef st
-    $ rendererData . starColors .~ \cs -> do
-        glBindBuffer GL_SHADER_STORAGE_BUFFER colbuf
-        withArrayLen cs $ \n a ->
-          glBufferData
-            GL_SHADER_STORAGE_BUFFER
-            (4 * fromIntegral n)
-            (castPtr a)
-            GL_STREAM_DRAW
-        glBindBufferBase GL_SHADER_STORAGE_BUFFER 0 colbuf
-  modifyIORef st
-    $ rendererData . starSizes .~ \ss -> do
-        glBindBuffer GL_SHADER_STORAGE_BUFFER sizebuf
-        withArrayLen ss $ \n a ->
-          glBufferData
-            GL_SHADER_STORAGE_BUFFER
-            (4 * fromIntegral n)
-            (castPtr a)
-            GL_STREAM_DRAW
-        glBindBufferBase GL_SHADER_STORAGE_BUFFER 1 sizebuf
+  for_ [(starColors, colbuf, 0), (starSizes, sizebuf, 1)] $ \(what, buf, bid) ->
+    modifyIORef st
+      $ rendererData . what .~ \xs -> do
+          glBindBuffer GL_SHADER_STORAGE_BUFFER buf
+          withArrayLen xs $ \n a ->
+            for_ [nullPtr, castPtr a] $ \ptr ->
+              glBufferData
+                GL_SHADER_STORAGE_BUFFER
+                (4 * fromIntegral n)
+                ptr
+                GL_STREAM_DRAW
+            -- explicitly respecify the buffer
+          glBindBufferBase GL_SHADER_STORAGE_BUFFER bid buf
   -- array&data
   [arr] <- withArray [0] $ \a -> glGenVertexArrays 1 a >> peekArray 1 a
   [buf] <- withArray [0] $ \a -> glGenBuffers 1 a >> peekArray 1 a
