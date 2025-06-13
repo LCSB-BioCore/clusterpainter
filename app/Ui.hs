@@ -433,11 +433,17 @@ featureGroupColors st =
    in ( M.fromAscList $ zip (st ^. hiFeatures . to S.toList) featCols
       , M.fromAscList $ zip (st ^. hiGroups . to S.toList) groupCols)
 
-colorMarker cmap i =
-  case cmap M.!? i of
-    Nothing -> text "□"
-    Just col ->
-      textColored ((pure :: ImVec4 -> IO ImVec4) $ v4rry ImVec4 col) "■"
+colorMarker col =
+  textColored ((pure :: ImVec4 -> IO ImVec4) $ v4rry ImVec4 col) "■"
+
+removeSetIndex idx set =
+  S.fromAscList
+    [ if i > idx
+      then pred i
+      else i
+    | i <- S.toAscList set
+    , i /= idx
+    ]
 
 drawUI _ appst = do
   st <- readIORef appst
@@ -450,62 +456,74 @@ drawUI _ appst = do
         $ V.imapM
         $ \i t ->
             withRef_ t $ \r ->
-              withID (pack $ show i) $ do
-                colorMarker featmap i
+              withID (pack $ show i)
+                . withStyleColor
+                    ImGuiCol_Button
+                    (pure . v4rry ImVec4
+                       $ M.findWithDefault (V4 0.8 0.8 0.8 1.0) i featmap :: IO
+                       ImVec4) $ do
+                whenM (button "   ") . modifyIORef appst
+                  $ hiFeatures %~ runIdentity . S.alterF (pure . not) i
                 sameLine
                 inputText "" r 100
-                sameLine
-                whenM (button "show") $ do
-                  modifyIORef appst $ hiFeatures %~ S.insert i
-                sameLine
-                whenM (button "hide") $ do
-                  modifyIORef appst $ hiFeatures %~ S.delete i
   withWindowOpen "Groups" $ do
-    withZoom appst groupNames $ \r ->
-      withVal_ r
-        $ V.imapM
-        $ \i t ->
-            withRef_ t $ \r ->
-              withID (pack $ show i) $ do
-                colorMarker groupmap i
-                sameLine
-                inputText "" r 100
-                sameLine
-                whenM (button "show") $ do
-                  modifyIORef appst $ hiGroups %~ S.insert i
-                sameLine
-                whenM (button "hide") $ do
-                  modifyIORef appst $ hiGroups %~ S.delete i
-                sameLine
-                whenM (button "select") $ do
-                  modifyIORef appst
-                    $ clusters . traverse
-                        %~ (\c ->
-                              clusterSelected .~ (c ^. groups . to (S.member i))
-                                $ c)
-                sameLine
-                whenM (button "assign") $ do
-                  modifyIORef appst $ hiGroups %~ S.insert i
-                  modifyIORef appst
-                    $ clusters . traverse
-                        %~ (\c ->
-                              c
-                                & groups
-                                    %~ (if c ^. clusterSelected
-                                          then S.insert i
-                                          else S.delete i))
-                sameLine
-                whenM (button "delete") $ do
-                  pure () -- TODO
-    whenM (button "add") $ do
-      modifyIORef appst $ groupNames %~ flip V.snoc "group"
-    --TODO permanent syncs
-    when (st ^. syncOutFile . to isJust)
-      $ whenM (button "export to file")
-      $ doOutput st
+    whenM (button "new group##at begin") . modifyIORef appst
+      $ (groupNames %~ V.cons "group")
+          . (hiGroups %~ S.mapMonotonic succ)
+          . (clusters . each . groups %~ S.mapMonotonic succ)
+    when (st ^. syncOutFile . to isJust) $ do
+      sameLine
+      whenM (button "export to file") $ doOutput st
+    todel <-
+      withRef_ Nothing $ \todel -> do
+        withZoom appst groupNames . flip withVal_ . V.imapM $ \i t ->
+          withRef_ t $ \r ->
+            withID (pack $ show i)
+              . withStyleColor
+                  ImGuiCol_Button
+                  (pure . v4rry ImVec4
+                     $ M.findWithDefault (V4 0.8 0.8 0.8 1.0) i groupmap :: IO
+                     ImVec4) $ do
+              whenM (button "   ") $ do
+                modifyIORef appst
+                  $ hiFeatures %~ runIdentity . S.alterF (pure . not) i
+              sameLine
+              inputText "" r 100
+              sameLine
+              whenM (button "select") $ do
+                modifyIORef appst
+                  $ clusters . traverse
+                      %~ (\c ->
+                            clusterSelected .~ (c ^. groups . to (S.member i))
+                              $ c)
+              sameLine
+              whenM (button "assign") $ do
+                modifyIORef appst $ hiGroups %~ S.insert i
+                modifyIORef appst
+                  $ clusters . traverse
+                      %~ (\c ->
+                            c
+                              & groups
+                                  %~ (if c ^. clusterSelected
+                                        then S.insert i
+                                        else S.delete i))
+              sameLine
+              whenM (button "delete") $ do
+                writeIORef todel (Just i)
+    when (st ^. groupNames . to (not . V.null))
+      . whenM (button "new group##at end")
+      . modifyIORef appst
+      $ groupNames %~ flip V.snoc "group"
+    case todel of
+      Nothing -> pure ()
+      Just gid ->
+        modifyIORef appst
+          $ (hiGroups %~ removeSetIndex gid)
+              . (clusters . each . groups %~ removeSetIndex gid)
+              . (groupNames %~ V.ifilter (\i _ -> gid /= i))
   withWindowOpen "Sleepwalk" $ do
     text "Mode"
-    swm <- (^. swMode) <$> readIORef appst
+    let swm = st ^. swMode
     for_
       [ (SWOff, "Off")
       , (SWAllFeatures, "All features")
@@ -522,7 +540,7 @@ drawUI _ appst = do
             swls
             (pure 1e-2 :: IO Float)
             (pure 1e2)
-            "%0.3g σ"
+            "%0.3g"
             ImGuiSliderFlags_Logarithmic
   withWindowOpen "Data"
     $ withTable defTableOptions "##data" (succ $ st ^. hiFeatures ^. to S.size)
@@ -566,7 +584,7 @@ drawUI _ appst = do
           tableNextColumn $ do
             text (st ^. featureNames . to (V.! fid))
             sameLine
-            colorMarker featmap fid
+            colorMarker (featmap M.! fid)
         --TODO selection
         for_ (st ^. hiGroups . to S.toAscList) $ \gid -> do
           tableNextRow
@@ -574,7 +592,7 @@ drawUI _ appst = do
           tableNextColumn $ do
             text gname
             sameLine
-            colorMarker groupmap gid
+            colorMarker (groupmap M.! gid)
           for_ (st ^. hiFeatures . to S.toAscList) $ \fid ->
             tableNextColumn
               $ plotLines (pack $ "##" ++ show gid ++ "," ++ show fid)
