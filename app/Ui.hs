@@ -448,6 +448,8 @@ removeSetIndex idx set =
 drawUI _ appst = do
   st <- readIORef appst
   let (featmap, groupmap) = featureGroupColors st
+      fSz = st ^. fontSize
+      withWidth = withItemWidth . (fSz*)
   withWindowOpen "FPS" $ framerate >>= text . pack . show
   withWindowOpen "Features" $ do
     withZoom appst showWeights $ checkbox "Scale by weights"
@@ -462,10 +464,10 @@ drawUI _ appst = do
                     (pure . v4rry ImVec4
                        $ M.findWithDefault (V4 0.8 0.8 0.8 1.0) i featmap :: IO
                        ImVec4) $ do
-                whenM (button "   ") . modifyIORef appst
+                whenM (button "    ") . modifyIORef appst
                   $ hiFeatures %~ runIdentity . S.alterF (pure . not) i
                 sameLine
-                inputText "" r 100
+                withWidth (-1) $ inputText "" r 100
   withWindowOpen "Groups" $ do
     whenM (button "new group##at begin") . modifyIORef appst
       $ (groupNames %~ V.cons "group")
@@ -484,11 +486,12 @@ drawUI _ appst = do
                   (pure . v4rry ImVec4
                      $ M.findWithDefault (V4 0.8 0.8 0.8 1.0) i groupmap :: IO
                      ImVec4) $ do
-              whenM (button "   ") $ do
+              whenM (button "    ") $ do
                 modifyIORef appst
-                  $ hiFeatures %~ runIdentity . S.alterF (pure . not) i
+                  $ hiGroups %~ runIdentity . S.alterF (pure . not) i
               sameLine
-              inputText "" r 100
+              -- TODO the button widths are somewhat WTH
+              withWidth (-12) $ inputText "" r 100
               sameLine
               whenM (button "select") $ do
                 modifyIORef appst
