@@ -449,7 +449,7 @@ drawUI _ appst = do
   st <- readIORef appst
   let (featmap, groupmap) = featureGroupColors st
       fSz = st ^. fontSize
-      withWidth = withItemWidth . (fSz*)
+      withWidth = withItemWidth . (fSz *)
   withWindowOpen "FPS" $ framerate >>= text . pack . show
   withWindowOpen "Features" $ do
     withZoom appst showWeights $ checkbox "Scale by weights"
