@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 import Control.Exception (bracket, bracket_)
-import Control.Monad (unless, void, when)
+import Control.Monad (unless)
 import Control.Monad.IO.Class ()
 import Data.IORef
 import DearImGui
@@ -11,7 +11,6 @@ import DearImGui.SDL.OpenGL
 import Graphics.GL
 import SDL
 import SDL.Raw.Video (getCurrentVideoDriver)
-import System.Mem
 
 import Config
 import St
@@ -48,6 +47,7 @@ main = do
               renderSetup appst
               mainLoop appst window
 
+mainLoop :: IORef AppState -> Window -> IO ()
 mainLoop appst window = loop
   where
     v2tup (V2 a b) = (a, b)

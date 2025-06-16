@@ -5,7 +5,6 @@
 module St where
 
 import Control.Lens hiding ((.=))
-import Control.Lens.TH
 import Data.Aeson
 import qualified Data.Set as S
 import qualified Data.Vector.Strict as V
@@ -41,6 +40,7 @@ data SWMode
   | SWSelFeatures
   deriving (Show, Eq)
 
+emptySt :: AppState
 emptySt =
   St
     { _clusters = V.empty
@@ -80,6 +80,7 @@ data RendererData = RD
 instance Show RendererData where
   show _ = "undefined"
 
+emptyRD :: RendererData
 emptyRD =
   RD
     { _rdFlatProgram = 0
@@ -108,6 +109,7 @@ data Cluster = Cluster
   , _groups :: S.Set Int
   } deriving (Show)
 
+emptyCluster :: Cluster
 emptyCluster =
   Cluster
     { _position = V2 0 0
@@ -143,12 +145,12 @@ instance ToJSON FileState where
 
 doOutput :: AppState -> IO ()
 doOutput st =
-  let fst =
+  let filestate =
         FSt
           { fsFeatures = st ^.. featureNames . each . to unpack
           , fsGroups = st ^.. groupNames . each . to unpack
           , fsClusterGroups = st ^.. clusters . each . groups . to S.toList
           }
    in case st ^. syncOutFile of
-        Just fn -> encodeFile fn fst
+        Just fn -> encodeFile fn filestate
         _ -> pure ()

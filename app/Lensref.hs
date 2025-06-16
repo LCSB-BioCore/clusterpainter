@@ -43,3 +43,13 @@ withZoom rb l io = do
   a <- io rs
   readIORef rs >>= modifyIORef rb . (l .~)
   pure a
+
+withZoom_ ::
+     IORef big
+  -> (forall f. Functor f => LensLike' f big small)
+  -> (IORef small -> IO a)
+  -> IO ()
+withZoom_ rb l io = do
+  rs <- readIORef rb >>= newIORef . (^. l)
+  _ <- io rs
+  readIORef rs >>= modifyIORef rb . (l .~)

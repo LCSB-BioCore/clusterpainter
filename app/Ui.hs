@@ -7,22 +7,22 @@ import Assets
 import Lensref
 import St
 
-import Control.Applicative
 import Control.Lens
 import Control.Monad (void, when)
 import Data.Bits
 import Data.Bool (bool)
 import qualified Data.ByteString.Internal as BSI
 import Data.Char (chr, ord)
-import Data.Foldable (foldl', for_)
+import Data.Foldable (for_)
 import Data.IORef
+import Data.Int (Int32)
 import Data.List (foldl1')
 import qualified Data.Map.Strict as M
-import Data.Maybe (fromJust, isJust)
+import Data.Maybe (isJust)
 import Data.Semigroup
 import qualified Data.Set as S
 import qualified Data.Vector.Strict as V
-import DearImGui
+import DearImGui hiding (w, x, y, z)
 import qualified DearImGui.FontAtlas as F
 import DearImGui.Internal.Text
 import qualified DearImGui.Raw.Font as RF
@@ -36,13 +36,23 @@ import Graphics.GL
 import SDL
 
 {- projection helpers -}
+v2rry :: (a -> a -> b) -> V2 a -> b
 v2rry f (V2 x y) = f x y
 
+v3rry :: (a -> a -> a -> b) -> V3 a -> b
 v3rry f (V3 x y z) = f x y z
 
+v4rry :: (a -> a -> a -> a -> b) -> V4 a -> b
 v4rry f (V4 x y z w) = f x y z w
 
-inf = 1 / 0 :: Float
+squared :: Num a => a -> a
+squared a = a * a
+
+errorDist :: Num a => a -> a -> a
+errorDist a b = squared (a - b)
+
+inf :: Fractional a => a
+inf = 1 / 0
 
 scaleUnscale ::
      AppState
@@ -52,13 +62,14 @@ scaleUnscale ::
 scaleUnscale st =
   let (vmin, vmax) = st ^. positionRange
       vmid@(V2 vmidx vmidy) = (vmin + vmax) / 2
-      s@(V2 xs ys) = vmax - vmin
+      (V2 xs ys) = vmax - vmin
       sc = min (1 / xs) (1 / ys) * 0.9 --TODO zoom?
    in ( \cp posx posy ->
           cp ((posx - vmidx) * sc + 0.5) ((posy - vmidy) * sc + 0.5)
-      , \cs size -> cs (size * sc)
+      , \cs sz -> cs (sz * sc)
       , \pt -> (pt - pure 0.5) / pure sc + vmid)
 
+clusterAt :: V2 Float -> AppState -> Maybe Int
 clusterAt pos st =
   getArg . minimum
     $ Arg inf Nothing
@@ -73,6 +84,7 @@ clusterAt pos st =
     getArg (Arg _ a) = a
 
 {- coloring helpers -}
+hsv2rgb :: (Ord a, Num a) => a -> a -> a -> a -> V4 a
 hsv2rgb h s v a =
   V4 (lb + scale * clr 0) (lb + scale * clr 2) (lb + scale * clr 4) a
   where
@@ -89,6 +101,7 @@ hsv2rgb h s v a =
     h6 = h * 6
 
 {- rendering (low-level) -}
+vertexShaderWithCoords :: String
 vertexShaderWithCoords =
   "#version 430 core\n\
  \ layout (location = 0) in vec3 pos;\n\
@@ -105,6 +118,7 @@ vertexShaderWithCoords =
  \    in_coord = pos.xy;\n\
  \ }"
 
+fragmentShaderFlatColor :: String
 fragmentShaderFlatColor =
   "#version 430 core\n\
  \ #define M_PI 3.1415926535897932384626433832795\n\
@@ -117,6 +131,7 @@ fragmentShaderFlatColor =
  \    FragColor = color;\n\
  \ }"
 
+fragmentShaderStar :: String
 fragmentShaderStar =
   "#version 430 core\n\
  \ #define M_PI 3.1415926535897932384626433832795\n\
@@ -138,39 +153,39 @@ fragmentShaderStar =
  \    FragColor = vec4(col.x,col.y,col.z, 1.0);\n\
  \ }"
 
+c2i :: Num i => Char -> i
 c2i = fromIntegral . ord
 
+i2c :: Integral i => i -> Char
 i2c = chr . fromIntegral
 
+quadBuf :: [Float]
 quadBuf = [-1, -1, -1, 1, 1, -1, 1, 1]
 
-circleBufStepDeg = 10
-
-circleBufSteps = 360 `div` circleBufStepDeg
-
-ratio2rad = (2 * pi *)
-
+makeShaderProgram :: String -> String -> IO GLuint
 makeShaderProgram vertexShader fragmentShader = do
-  [vs, fs] <- traverse glCreateShader [GL_VERTEX_SHADER, GL_FRAGMENT_SHADER]
+  shs@[vs, fs] <- traverse glCreateShader [GL_VERTEX_SHADER, GL_FRAGMENT_SHADER]
   for_ [(vs, vertexShader), (fs, fragmentShader)] $ \(s, src) ->
     withArray (map c2i src ++ [0]) $ \psrc ->
       withArray [psrc] $ \ppsrc -> do
         glShaderSource s 1 ppsrc nullPtr
         glCompileShader s
-        [succ] <-
+        [status] <-
           withArray [0] $ \a ->
             glGetShaderiv s GL_COMPILE_STATUS a >> peekArray 1 a
-        when (succ == 0) $ do
-          log <-
-            withArray (replicate 512 0) $ \a ->
-              glGetShaderInfoLog s 512 nullPtr a >> peekArray 512 a
-          print . map i2c $ takeWhile (/= 0) log
+        when (status == 0) $ do
+          let bufSize = 512
+          logBuf <-
+            withArray (replicate bufSize 0) $ \a ->
+              glGetShaderInfoLog s bufSize nullPtr a >> peekArray bufSize a
+          print . map i2c $ takeWhile (/= 0) logBuf
   prog <- glCreateProgram
-  traverse (glAttachShader prog) [vs, fs]
+  for_ shs $ glAttachShader prog
   glLinkProgram prog
-  traverse glDeleteShader [vs, fs]
+  for_ shs glDeleteShader
   pure prog
 
+renderSetup :: IORef AppState -> IO ()
 renderSetup st = do
   -- shaders first
   progFlat <- makeShaderProgram vertexShaderWithCoords fragmentShaderFlatColor
@@ -238,15 +253,17 @@ renderSetup st = do
   fsz <- (^. fontSize . to CFloat) <$> readIORef st
   fconf <- RFC.new
   RFC.setFontDataOwnedByAtlas fconf $ CBool 0
-  withForeignPtr fptr $ \ptr ->
+  void . withForeignPtr fptr $ \ptr ->
     RF.addFontFromMemoryTTF (castPtr ptr, flen) fsz fconf ranges
   F.build
   GR.destroyRangesVector rangesVec
   RFC.destroy fconf
   GR.destroy builder
 
+renderApp :: V2 Int -> IORef AppState -> IO ()
 renderApp s appst = unRef appst $ renderApp' s
 
+isotropicUnitProjection :: (Fractional f, Integral i) => ([f] -> a) -> V2 i -> a
 isotropicUnitProjection sp sz = do
   let V2 sx sy = fromIntegral <$> sz
   if sx >= sy
@@ -255,6 +272,7 @@ isotropicUnitProjection sp sz = do
     else let r = sx / sy
           in sp [2, 0, 0, 0, 0, -2 * r, 0, 0, 0, 0, 1, 0, -1, r, 0, 1]
 
+unprojectIsotropicUnit :: (Fractional f, Integral i) => V2 i -> V2 i -> V2 f
 unprojectIsotropicUnit sz pt = do
   let V2 sx sy = fromIntegral <$> sz
       V2 px py = fromIntegral <$> pt
@@ -262,6 +280,7 @@ unprojectIsotropicUnit sz pt = do
     then V2 (((px - (sx - sy) / 2) / sy)) (py / sy)
     else V2 (px / sx) ((py - (sy - sx) / 2) / sx)
 
+renderApp' :: V2 Int -> AppState -> IO ()
 renderApp' sz st = do
   glClear (GL_COLOR_BUFFER_BIT .|. GL_DEPTH_BUFFER_BIT)
   glBindVertexArray (st ^. rendererData . rdCircleArray)
@@ -318,7 +337,7 @@ renderApp' sz st = do
               | st ^. hover == Nothing -> 1
               | st ^. swMode == SWOff -> 1
               | st ^. swSelect -> st ^. swSigma . to (dist <=) . to (bool 1 0)
-              | otherwise -> 1 - exp (-dist / (st ^. swSigma) ^ 2)
+              | otherwise -> 1 - exp (-dist / squared (st ^. swSigma))
     fCl clr clr clr 1
     glDrawArrays GL_TRIANGLE_STRIP 0 4
   {- star plots -}
@@ -338,12 +357,13 @@ renderApp' sz st = do
       glDrawArrays GL_TRIANGLE_STRIP 0 4
 
 {- event processing -}
+swDist :: AppState -> Cluster -> Maybe Float
 swDist st c =
   case (st ^. hover, st ^. swMode) of
     (Just ci, SWTopo) -> c ^? topoDists . ix ci
     (Just ci, SWAllFeatures) ->
       let otherFs = st ^? clusters . ix ci . features
-       in V.sum . V.zipWith (\a b -> (a - b) ^ 2) (c ^. features) <$> otherFs
+       in V.sum . V.zipWith errorDist (c ^. features) <$> otherFs
     (Just ci, SWSelFeatures) ->
       let otherFs = st ^? clusters . ix ci . features
           sels = st ^. hiFeatures
@@ -351,15 +371,17 @@ swDist st c =
             . V.izipWith
                 (\i a b ->
                    if S.member i sels
-                     then (a - b) ^ 2
+                     then errorDist a b
                      else 0)
                 (c ^. features)
             <$> otherFs
     (_, _) -> Nothing
 
+doPaint :: Int -> IORef AppState -> IO ()
 doPaint ci appst =
   unRef appst $ \st ->
-    let sel =
+    let sel :: Traversal' (Ve Cluster) Cluster
+        sel =
           if st ^. swSelect
             then each . filtered (maybe False (<= st ^. swSigma) . swDist st)
             else ix ci
@@ -367,18 +389,17 @@ doPaint ci appst =
           Just b -> modifyIORef appst $ clusters . sel . clusterSelected .~ b
           _ -> pure ()
 
-onEvent sz (MouseButtonEvent b) appst
+onEvent :: V2 Int32 -> EventPayload -> IORef AppState -> IO ()
+onEvent _ (MouseButtonEvent b) appst
   | Released <- mouseButtonEventMotion b
   , ButtonLeft <- mouseButtonEventButton b =
     modifyIORef appst $ painting .~ Nothing
   | Pressed <- mouseButtonEventMotion b
-  , ButtonLeft <- mouseButtonEventButton b
-  , P p <- mouseButtonEventPos b =
+  , ButtonLeft <- mouseButtonEventButton b =
     unRef appst $ \st ->
       case st ^. hover of
         Just ci -> do
-          let Just action =
-                st ^? clusters . ix ci . clusterSelected . to (Just . not)
+          let action = st ^? clusters . ix ci . clusterSelected . to not
           modifyIORef appst $ painting .~ action
           doPaint ci appst
         Nothing -> do
@@ -397,8 +418,10 @@ onEvent sz (MouseMotionEvent b) appst
 onEvent _ _ _ = pure ()
 
 {- user interface -}
+whenM :: Monad m => m Bool -> m () -> m ()
 whenM a b = a >>= flip when b
 
+bresenhamSplit :: (Ord k, Num k) => k -> k -> [a] -> ([a], [a])
 bresenhamSplit k n xs
   | k * 2 > n =
     let (as, bs) = bresenhamSplit (n - k) n xs
@@ -406,12 +429,12 @@ bresenhamSplit k n xs
   | otherwise = go ((2 * k) - n) xs
   where
     go _ [] = ([], [])
-    go d (x:xs)
+    go d (x:xs1)
       | d > 0 =
-        let (as, bs) = go (d - 2 * n + 2 * k) xs
+        let (as, bs) = go (d - 2 * n + 2 * k) xs1
          in (as, x : bs)
       | otherwise =
-        let (as, bs) = go (d + 2 * k) xs
+        let (as, bs) = go (d + 2 * k) xs1
          in (x : as, bs)
 
 featureGroupColors :: AppState -> (Float -> a) -> (M.Map Int a, M.Map Int a)
@@ -428,18 +451,21 @@ featureGroupColorsHSV ::
      AppState -> (M.Map Int (V4 Float), M.Map Int (V4 Float))
 featureGroupColorsHSV st = featureGroupColors st (\h -> hsv2rgb h 0.9 0.9 1)
 
+colorMarker :: V4 Float -> IO ()
 colorMarker col =
   textColored ((pure :: ImVec4 -> IO ImVec4) $ v4rry ImVec4 col) "■"
 
-removeSetIndex idx set =
+removeSetIndex :: (Ord a, Enum a) => a -> S.Set a -> S.Set a
+removeSetIndex idx s =
   S.fromAscList
     [ if i > idx
       then pred i
       else i
-    | i <- S.toAscList set
+    | i <- S.toAscList s
     , i /= idx
     ]
 
+drawUI :: V2 Int -> IORef AppState -> IO ()
 drawUI _ appst = do
   st <- readIORef appst
   let (featmap, groupmap) = featureGroupColorsHSV st
@@ -447,8 +473,8 @@ drawUI _ appst = do
       withWidth = withItemWidth . (fSz *)
   withWindowOpen "FPS" $ framerate >>= text . pack . show
   withWindowOpen "Features" $ do
-    withZoom appst showWeights $ checkbox "Scale by weights"
-    withZoom appst featureNames $ \r ->
+    withZoom_ appst showWeights $ checkbox "Scale by weights"
+    withZoom_ appst featureNames $ \r ->
       withVal_ r
         $ V.imapM
         $ \i t ->
@@ -560,17 +586,17 @@ drawUI _ appst = do
                 [(-), (+)]
             fmins = foldl1' min flows
             fmaxs = foldl1' max fhighs
-            plotData fid gid =
+            plotData fid gid' =
               let lb = fmins V.! fid
                   rng = fmaxs V.! fid - lb
                   xs = map ((+ lb) . (* rng)) [0,0.05 .. 1]
-                  gaussContrib x m v w = w * exp ((x - m) ^ 2 / negate v)
+                  gaussContrib x m v w = w * exp (errorDist x m / negate v)
                   contribAt x =
                     sum
                       $ st ^.. clusters
                           . each
                           . filtered
-                              (case gid of
+                              (case gid' of
                                  Just gid -> (^. groups . to (S.member gid))
                                  Nothing -> (^. clusterSelected))
                           . to

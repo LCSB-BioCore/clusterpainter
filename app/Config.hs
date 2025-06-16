@@ -9,7 +9,6 @@ import St
 
 import Control.Monad
 import Data.Aeson
-import Data.Bool
 import Data.List
 import qualified Data.Set as S
 import qualified Data.Vector.Strict as V
@@ -31,6 +30,7 @@ data AnnotOpts = AnnotOpts
   , annGroups :: Maybe FilePath
   } deriving (Show)
 
+annotOpts :: Parser AnnotOpts
 annotOpts = do
   annFeatureNames <-
     optional . strOption
@@ -59,11 +59,11 @@ data Opts = Opts
   , varsFile :: Either Float FilePath
   , meansFile :: Maybe FilePath
   , inputFiles :: Either AnnotOpts FilePath
-  , inFile :: Maybe FilePath
   , outFile :: Maybe FilePath
   , uiFontSize :: Float
   } deriving (Show)
 
+opts :: Parser Opts
 opts = do
   featuresFile <-
     strOption
@@ -121,7 +121,7 @@ opts = do
       $ short 'o'
           <> long "output"
           <> metavar "JSON"
-          <> help "periodically save output into this file"
+          <> help "synchronize output into this file"
   uiFontSize <-
     option auto
       $ short 'A'
@@ -145,12 +145,15 @@ parseOpts =
                      ++ " and distributed under the terms of Apache-2.0 license."
                      ++ " See https://github.com/LCSB-BioCore/clusterpainter for details and source."))
 
+decodeFile :: FromJSON a => FilePath -> IO a
 decodeFile path = do
-  x <- eitherDecodeFileStrict path
-  case x of
+  x' <- eitherDecodeFileStrict path
+  case x' of
     Left err -> fail $ "failed reading " ++ path ++ ": " ++ err
     Right x -> pure x
 
+checkMtxSz ::
+     (Foldable t, MonadFail m) => String -> Int -> Int -> t (t a) -> m ()
 checkMtxSz what n nn xs =
   unless (length xs == n && all ((== nn) . length) xs) . fail
     $ "bad array size in "
@@ -161,6 +164,7 @@ checkMtxSz what n nn xs =
         ++ show nn
         ++ ")"
 
+checkVecSz :: (Foldable t, MonadFail m) => String -> Int -> t a -> m ()
 checkVecSz what n xs =
   unless (length xs == n) . fail
     $ "bad vector size in " ++ what ++ " (expected " ++ show n ++ ")"
@@ -202,13 +206,13 @@ processOpts = do
   fst <-
     case inputFiles o of
       Right inf -> do
-        fst <- decodeFile inf
-        checkVecSz (inf ++ " groups") nc $ fsClusterGroups fst
-        let ngs = length . head $ fsClusterGroups fst
-        checkVecSz (inf ++ " groups") nc $ fsClusterGroups fst
-        checkVecSz (inf ++ " feature names") nd $ fsFeatures fst
-        checkVecSz (inf ++ " group names") ngs $ fsGroups fst
-        pure fst
+        x <- decodeFile inf
+        checkVecSz (inf ++ " groups") nc $ fsClusterGroups x
+        let ngs = length . head $ fsClusterGroups x
+        checkVecSz (inf ++ " groups") nc $ fsClusterGroups x
+        checkVecSz (inf ++ " feature names") nd $ fsFeatures x
+        checkVecSz (inf ++ " group names") ngs $ fsGroups x
+        pure x
       Left ao -> do
         fns <-
           case annFeatureNames ao of
@@ -240,7 +244,7 @@ processOpts = do
   let featureMins = foldl1' (zipWith min) fs
       featureMaxs = foldl1' (zipWith max) fs
       inf = 1 / 0 :: Float
-      positionRange =
+      posRng =
         foldl'
           (\(l, u) p -> (liftA2 min l p, liftA2 max u p))
           (pure inf, pure (-inf))
@@ -255,7 +259,7 @@ processOpts = do
       , _featureRanges =
           V.fromList
             $ zipWith V2 featureMins (zipWith (-) featureMaxs featureMins)
-      , _positionRange = positionRange
+      , _positionRange = posRng
       , _fontSize = uiFontSize o
       }
 
