@@ -287,7 +287,7 @@ renderApp' sz st = do
       v2rry fPos $ c ^. position
       glDrawArrays GL_TRIANGLE_STRIP 0 4
   {- cluster painting helpers -}
-  let (featmap, groupmap) = featureGroupColors1 st
+  let (featmap, groupmap) = featureGroupColors st id
       nFeats = M.size featmap
       nGroups = M.size groupmap
       franges = st ^. featureRanges
@@ -414,30 +414,19 @@ bresenhamSplit k n xs
         let (as, bs) = go (d + 2 * k) xs
          in (x : as, bs)
 
---TODO unify with below
-featureGroupColors1 :: AppState -> (M.Map Int Float, M.Map Int Float)
-featureGroupColors1 st =
+featureGroupColors :: AppState -> (Float -> a) -> (M.Map Int a, M.Map Int a)
+featureGroupColors st tr =
   let nFeats = st ^. hiFeatures . to S.size
       nGroups = st ^. hiGroups . to S.size
       n = nFeats + nGroups
-      cols = [fromIntegral i / fromIntegral n | i <- [1 .. n]]
+      cols = map tr [fromIntegral i / fromIntegral n | i <- [1 .. n]]
       (groupCols, featCols) = bresenhamSplit nFeats n cols
    in ( M.fromAscList $ zip (st ^. hiFeatures . to S.toList) featCols
       , M.fromAscList $ zip (st ^. hiGroups . to S.toList) groupCols)
 
-featureGroupColors :: AppState -> (M.Map Int (V4 Float), M.Map Int (V4 Float))
-featureGroupColors st =
-  let nFeats = st ^. hiFeatures . to S.size
-      nGroups = st ^. hiGroups . to S.size
-      n = nFeats + nGroups
-      cols :: [V4 Float]
-      cols =
-        map
-          (\h -> hsv2rgb h 0.9 0.9 1)
-          [fromIntegral i / fromIntegral n | i <- [1 .. n]]
-      (groupCols, featCols) = bresenhamSplit nFeats n cols
-   in ( M.fromAscList $ zip (st ^. hiFeatures . to S.toList) featCols
-      , M.fromAscList $ zip (st ^. hiGroups . to S.toList) groupCols)
+featureGroupColorsHSV ::
+     AppState -> (M.Map Int (V4 Float), M.Map Int (V4 Float))
+featureGroupColorsHSV st = featureGroupColors st (\h -> hsv2rgb h 0.9 0.9 1)
 
 colorMarker col =
   textColored ((pure :: ImVec4 -> IO ImVec4) $ v4rry ImVec4 col) "■"
@@ -453,7 +442,7 @@ removeSetIndex idx set =
 
 drawUI _ appst = do
   st <- readIORef appst
-  let (featmap, groupmap) = featureGroupColors st
+  let (featmap, groupmap) = featureGroupColorsHSV st
       fSz = st ^. fontSize
       withWidth = withItemWidth . (fSz *)
   withWindowOpen "FPS" $ framerate >>= text . pack . show
