@@ -311,30 +311,14 @@ renderApp' sz st = do
   for_ (st ^.. clusters . each) $ \c -> do
     fSz $ wScale c * 0.4
     v2rry fPos $ c ^. position
-    let clr
-          | st ^. hover == Nothing = 1
-          | st ^. swMode == SWOff = 1
-          | st ^. swSelect = st ^. swSigma . to (dist <) . to (bool 1 0)
-          | otherwise = 1 - exp (-dist / (st ^. swSigma) ^ 2)
-        dist =
-          case (st ^. hover, st ^. swMode) of
-            (Just ci, SWTopo) -> fromJust $ c ^? topoDists . ix ci
-            (Just ci, SWAllFeatures) ->
-              let Just otherFs = st ^? clusters . ix ci . features
-               in V.sum
-                    $ V.zipWith (\a b -> (a - b) ^ 2) (c ^. features) (otherFs)
-            (Just ci, SWSelFeatures) ->
-              let Just otherFs = st ^? clusters . ix ci . features
-                  sels = st ^. hiFeatures
-               in V.sum
-                    $ V.izipWith
-                        (\i a b ->
-                           if S.member i sels
-                             then (a - b) ^ 2
-                             else 0)
-                        (c ^. features)
-                        (otherFs)
-            (_, _) -> 0
+    let clr =
+          case swDist st c of
+            Nothing -> 1
+            Just dist
+              | st ^. hover == Nothing -> 1
+              | st ^. swMode == SWOff -> 1
+              | st ^. swSelect -> st ^. swSigma . to (dist <=) . to (bool 1 0)
+              | otherwise -> 1 - exp (-dist / (st ^. swSigma) ^ 2)
     fCl clr clr clr 1
     glDrawArrays GL_TRIANGLE_STRIP 0 4
   {- star plots -}
@@ -353,13 +337,36 @@ renderApp' sz st = do
         $ M.keys featmap
       glDrawArrays GL_TRIANGLE_STRIP 0 4
 
-doPaint ci appst =
-  unRef appst $ \st -> do
-    case st ^. painting of
-      Just b -> modifyIORef appst $ clusters . ix ci . clusterSelected .~ b
-      _ -> pure ()
-
 {- event processing -}
+swDist st c =
+  case (st ^. hover, st ^. swMode) of
+    (Just ci, SWTopo) -> c ^? topoDists . ix ci
+    (Just ci, SWAllFeatures) ->
+      let otherFs = st ^? clusters . ix ci . features
+       in V.sum . V.zipWith (\a b -> (a - b) ^ 2) (c ^. features) <$> otherFs
+    (Just ci, SWSelFeatures) ->
+      let otherFs = st ^? clusters . ix ci . features
+          sels = st ^. hiFeatures
+       in V.sum
+            . V.izipWith
+                (\i a b ->
+                   if S.member i sels
+                     then (a - b) ^ 2
+                     else 0)
+                (c ^. features)
+            <$> otherFs
+    (_, _) -> Nothing
+
+doPaint ci appst =
+  unRef appst $ \st ->
+    let sel =
+          if st ^. swSelect
+            then each . filtered (maybe False (<= st ^. swSigma) . swDist st)
+            else ix ci
+     in case st ^. painting of
+          Just b -> modifyIORef appst $ clusters . sel . clusterSelected .~ b
+          _ -> pure ()
+
 onEvent sz (MouseButtonEvent b) appst
   | Released <- mouseButtonEventMotion b
   , ButtonLeft <- mouseButtonEventButton b =
