@@ -280,8 +280,8 @@ renderApp' sz st = do
       maxWScale = recip . max 1e-3 . maximum $ st ^.. clusters . each . weight
   {- selection painting -}
   setupProgram rdFlatProgram flatProjection
-  fSz 0.666
-  fCl 0.666 0.666 0.666 1
+  fSz 0.56
+  fCl 0.222 0.222 0.222 1
   for_ (st ^.. clusters . to V.toList . each) $ \c ->
     when (c ^. clusterSelected) $ do
       v2rry fPos $ c ^. position
