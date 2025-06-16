@@ -18,7 +18,7 @@ import Data.Foldable (foldl', for_)
 import Data.IORef
 import Data.List (foldl1')
 import qualified Data.Map.Strict as M
-import Data.Maybe (isJust)
+import Data.Maybe (fromJust, isJust)
 import Data.Semigroup
 import qualified Data.Set as S
 import qualified Data.Vector.Strict as V
@@ -311,32 +311,31 @@ renderApp' sz st = do
   for_ (st ^.. clusters . each) $ \c -> do
     fSz $ wScale c * 0.4
     v2rry fPos $ c ^. position
-    case (st ^. hover, st ^. swMode) of
-      (Just ci, SWTopo) ->
-        let Just dist = c ^? topoDists . ix ci
-            clr = 1 - exp (-dist / (st ^. swSigma) ^ 2)
-         in fCl clr clr clr 1
-      (Just ci, SWAllFeatures) ->
-        let Just otherFs = st ^? clusters . ix ci . features
-            dist =
-              V.sum $ V.zipWith (\a b -> (a - b) ^ 2) (c ^. features) (otherFs)
-            clr = 1 - exp (-dist / (st ^. swSigma) ^ 2)
-         in fCl clr clr clr 1
-      (Just ci, SWSelFeatures) ->
-        let Just otherFs = st ^? clusters . ix ci . features
-            sels = st ^. hiFeatures
-            dist =
-              V.sum
-                $ V.izipWith
-                    (\i a b ->
-                       if S.member i sels
-                         then (a - b) ^ 2
-                         else 0)
-                    (c ^. features)
-                    (otherFs)
-            clr = 1 - exp (-dist / (st ^. swSigma) ^ 2)
-         in fCl clr clr clr 1
-      (_, _) -> fCl 1 1 1 1
+    let clr
+          | st ^. hover == Nothing = 1
+          | st ^. swMode == SWOff = 1
+          | st ^. swSelect = st ^. swSigma . to (dist <) . to (bool 1 0)
+          | otherwise = 1 - exp (-dist / (st ^. swSigma) ^ 2)
+        dist =
+          case (st ^. hover, st ^. swMode) of
+            (Just ci, SWTopo) -> fromJust $ c ^? topoDists . ix ci
+            (Just ci, SWAllFeatures) ->
+              let Just otherFs = st ^? clusters . ix ci . features
+               in V.sum
+                    $ V.zipWith (\a b -> (a - b) ^ 2) (c ^. features) (otherFs)
+            (Just ci, SWSelFeatures) ->
+              let Just otherFs = st ^? clusters . ix ci . features
+                  sels = st ^. hiFeatures
+               in V.sum
+                    $ V.izipWith
+                        (\i a b ->
+                           if S.member i sels
+                             then (a - b) ^ 2
+                             else 0)
+                        (c ^. features)
+                        (otherFs)
+            (_, _) -> 0
+    fCl clr clr clr 1
     glDrawArrays GL_TRIANGLE_STRIP 0 4
   {- star plots -}
   when (not $ M.null featmap) $ do
@@ -524,7 +523,7 @@ drawUI _ appst = do
           $ (hiGroups %~ removeSetIndex gid)
               . (clusters . each . groups %~ removeSetIndex gid)
               . (groupNames %~ V.ifilter (\i _ -> gid /= i))
-  withWindowOpen "Sleepwalk" $ do
+  withWindowOpen "Neighborhoods" $ do
     text "Mode"
     let swm = st ^. swMode
     for_
@@ -545,6 +544,7 @@ drawUI _ appst = do
             (pure 1e2)
             "%0.3g"
             ImGuiSliderFlags_Logarithmic
+    withZoom appst swSelect $ void . checkbox "Select by neighborhood"
   withWindowOpen "Data"
     $ withTable defTableOptions "##data" (succ $ st ^. hiFeatures ^. to S.size)
     $ flip when

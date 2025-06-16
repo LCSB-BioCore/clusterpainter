@@ -29,6 +29,7 @@ data AppState = St
   , _hover :: Maybe Int
   , _swSigma :: Float
   , _swMode :: SWMode
+  , _swSelect :: Bool
   , _showWeights :: Bool
   , _fontSize :: Float
   } deriving (Show)
@@ -55,6 +56,7 @@ emptySt =
     , _hover = Nothing
     , _swSigma = 1
     , _swMode = SWOff
+    , _swSelect = False
     , _showWeights = False
     , _fontSize = 20
     }
