@@ -569,7 +569,10 @@ drawUI _ appst = do
                     sum
                       $ st ^.. clusters
                           . each
-                          . filtered (^. groups . to (S.member gid))
+                          . filtered
+                              (case gid of
+                                 Just gid -> (^. groups . to (S.member gid))
+                                 Nothing -> (^. clusterSelected))
                           . to
                               (\c ->
                                  gaussContrib
@@ -584,7 +587,14 @@ drawUI _ appst = do
             text (st ^. featureNames . to (V.! fid))
             sameLine
             colorMarker (featmap M.! fid)
-        --TODO selection
+        when (or $ st ^.. clusters . each . clusterSelected) $ do
+          tableNextRow
+          tableNextColumn $ text "Selection"
+          for_ (st ^. hiFeatures . to S.toAscList) $ \fid ->
+            tableNextColumn
+              $ plotLines (pack $ "##selection," ++ show fid)
+              $ map CFloat
+              $ plotData fid Nothing
         for_ (st ^. hiGroups . to S.toAscList) $ \gid -> do
           tableNextRow
           let gname = st ^. groupNames . to (V.! gid)
@@ -596,4 +606,4 @@ drawUI _ appst = do
             tableNextColumn
               $ plotLines (pack $ "##" ++ show gid ++ "," ++ show fid)
               $ map CFloat
-              $ plotData fid gid
+              $ plotData fid (Just gid)
