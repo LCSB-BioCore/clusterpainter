@@ -7,17 +7,18 @@ module Config where
 
 import St
 
-import Control.Monad
-import Data.Aeson
-import Data.List
 import qualified Data.Set as S
 import qualified Data.Vector.Strict as V
-import Data.Version (showVersion)
-import DearImGui.Internal.Text
-import GHC.Generics
 import Options.Applicative
+
+import Control.Monad (unless)
+import Data.Aeson (FromJSON, ToJSON, eitherDecodeFileStrict)
+import Data.List (foldl', foldl1')
+import Data.Version (showVersion)
+import DearImGui.Internal.Text (pack)
+import GHC.Generics (Generic)
 import Paths_clusterpainter (version)
-import SDL.Vect
+import SDL.Vect (V2(..))
 
 data Shape = Shape
   { projection :: [(Float, Float)]
@@ -203,7 +204,7 @@ processOpts = do
         x <- decodeFile vfn
         checkMtxSz vfn nc nd x
         pure x
-  fst <-
+  filestate <-
     case inputFiles o of
       Right inf -> do
         x <- decodeFile inf
@@ -251,11 +252,12 @@ processOpts = do
           projs
   pure
     emptySt
-      { _featureNames = V.fromList . map pack $ fsFeatures fst
-      , _groupNames = V.fromList . map pack $ fsGroups fst
+      { _featureNames = V.fromList . map pack $ fsFeatures filestate
+      , _groupNames = V.fromList . map pack $ fsGroups filestate
       , _syncOutFile = outFile o
       , _clusters =
-          V.fromList $ zipClusters projs topos ws fs ms vs (fsClusterGroups fst)
+          V.fromList
+            $ zipClusters projs topos ws fs ms vs (fsClusterGroups filestate)
       , _featureRanges =
           V.fromList
             $ zipWith V2 featureMins (zipWith (-) featureMaxs featureMins)

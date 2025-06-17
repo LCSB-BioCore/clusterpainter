@@ -2,8 +2,8 @@
 
 module Lensref where
 
-import Control.Lens
-import Data.IORef
+import Control.Lens (LensLike', (.~), (^.))
+import Data.IORef (IORef, modifyIORef, newIORef, readIORef, writeIORef)
 
 -- TODO: flipping this might be nice
 withVal :: IORef a -> (a -> IO (a, b)) -> IO b

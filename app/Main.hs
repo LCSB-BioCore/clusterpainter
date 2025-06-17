@@ -1,23 +1,68 @@
 {-# LANGUAGE OverloadedStrings #-}
-
-import Control.Exception (bracket, bracket_)
-import Control.Monad (unless)
-import Control.Monad.IO.Class ()
-import Data.IORef
-import DearImGui
-import DearImGui.OpenGL3
-import DearImGui.SDL
-import DearImGui.SDL.OpenGL
-import Graphics.GL
-import SDL
-import SDL.Raw.Video (getCurrentVideoDriver)
+{-# LANGUAGE PatternSynonyms #-}
 
 import Config
 import St
 import Ui
 
-import Foreign.C.String
-import Foreign.Ptr
+import Control.Exception (bracket, bracket_)
+import Control.Monad (unless)
+import Control.Monad.IO.Class ()
+import Data.IORef (IORef, newIORef)
+import DearImGui
+  ( createContext
+  , destroyContext
+  , getDrawData
+  , newFrame
+  , render
+  , wantCaptureKeyboard
+  , wantCaptureMouse
+  )
+import DearImGui.OpenGL3
+  ( openGL3Init
+  , openGL3NewFrame
+  , openGL3RenderDrawData
+  , openGL3Shutdown
+  )
+import DearImGui.SDL (pollEventWithImGui, sdl2NewFrame, sdl2Shutdown)
+import DearImGui.SDL.OpenGL (sdl2InitForOpenGL)
+import Foreign.C.String (peekCString)
+import Foreign.Ptr (castPtr)
+import Graphics.GL
+  ( glGetString
+  , glViewport
+  , pattern GL_RENDERER
+  , pattern GL_SHADING_LANGUAGE_VERSION
+  , pattern GL_VENDOR
+  , pattern GL_VERSION
+  )
+import SDL
+  ( Event(eventPayload)
+  , EventPayload(KeyboardEvent, MouseButtonEvent, MouseMotionEvent, MouseWheelEvent,
+                 QuitEvent, TextEditingEvent, TextInputEvent, WindowResizedEvent)
+  , Mode(Normal)
+  , OpenGLConfig(glProfile)
+  , Profile(Core)
+  , SwapInterval(LateSwapTearing)
+  , V2(V2)
+  , Window
+  , WindowConfig(windowGraphicsContext, windowResizable)
+  , WindowGraphicsContext(OpenGLContext)
+  , WindowResizedEventData(windowResizedEventSize)
+  , ($=)
+  , createWindow
+  , defaultOpenGL
+  , defaultWindow
+  , destroyWindow
+  , get
+  , glCreateContext
+  , glDeleteContext
+  , glSwapWindow
+  , initializeAll
+  , swapInterval
+  , windowSize
+  )
+import SDL.Raw.Video (getCurrentVideoDriver)
 
 main :: IO ()
 main = do

@@ -4,13 +4,22 @@
 
 module St where
 
-import Control.Lens hiding ((.=))
-import Data.Aeson
 import qualified Data.Set as S
 import qualified Data.Vector.Strict as V
-import DearImGui.Internal.Text
-import Graphics.GL
-import SDL.Vect
+
+import Control.Lens (Each(each), (^.), (^..), makeLenses, to)
+import Data.Aeson
+  ( FromJSON(parseJSON)
+  , KeyValue((.=))
+  , ToJSON(toJSON)
+  , (.:)
+  , encodeFile
+  , object
+  , withObject
+  )
+import DearImGui.Internal.Text (Text, unpack)
+import Graphics.GL (GLuint)
+import SDL.Vect (V2(..))
 
 type Ve = V.Vector
 

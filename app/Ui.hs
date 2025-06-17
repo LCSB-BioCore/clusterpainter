@@ -1,5 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE NoMonomorphismRestriction #-}
+{-# LANGUAGE PatternSynonyms #-}
 
 module Ui where
 
@@ -8,32 +9,68 @@ import Lensref
 import St
 
 import Control.Lens
-import Control.Monad (void, when)
-import Data.Bits
-import Data.Bool (bool)
+import Graphics.GL
+
 import qualified Data.ByteString.Internal as BSI
-import Data.Char (chr, ord)
-import Data.Foldable (for_)
-import Data.IORef
-import Data.Int (Int32)
-import Data.List (foldl1')
 import qualified Data.Map.Strict as M
-import Data.Maybe (isJust)
-import Data.Semigroup
 import qualified Data.Set as S
 import qualified Data.Vector.Strict as V
-import DearImGui hiding (w, x, y, z)
 import qualified DearImGui.FontAtlas as F
-import DearImGui.Internal.Text
 import qualified DearImGui.Raw.Font as RF
 import qualified DearImGui.Raw.Font.Config as RFC
 import qualified DearImGui.Raw.Font.GlyphRanges as GR
-import Foreign.C.Types
-import Foreign.Marshal.Array
-import Foreign.Ptr
-import GHC.ForeignPtr
-import Graphics.GL
+
+import Control.Monad (void, when)
+import Data.Bits (Bits((.|.)))
+import Data.Bool (bool)
+import Data.Char (chr, ord)
+import Data.Foldable (for_)
+import Data.IORef (IORef, modifyIORef, readIORef, writeIORef)
+import Data.Int (Int32)
+import Data.List (foldl1')
+import Data.Maybe (isJust)
+import Data.Semigroup (Arg(Arg))
+import DearImGui
+  ( ImVec4(ImVec4)
+  , button
+  , checkbox
+  , defTableOptions
+  , framerate
+  , inputText
+  , pattern ImGuiCol_Button
+  , pattern ImGuiDataType_Float
+  , pattern ImGuiSliderFlags_Logarithmic
+  , plotLines
+  , radioButton
+  , sameLine
+  , sliderScalar
+  , styleColorsLight
+  , tableNextColumn
+  , tableNextRow
+  , text
+  , textColored
+  , withID
+  , withItemWidth
+  , withStyleColor
+  , withTable
+  , withWindowOpen
+  )
+import DearImGui.Internal.Text (pack, withCString)
+import Foreign.C.Types (CBool(CBool), CFloat(CFloat))
+import Foreign.Marshal.Array (peekArray, withArray, withArrayLen)
+import Foreign.Ptr (castPtr, nullPtr)
+import GHC.ForeignPtr (withForeignPtr)
 import SDL
+  ( EventPayload(MouseButtonEvent, MouseMotionEvent)
+  , InputMotion(Pressed, Released)
+  , MouseButton(ButtonLeft)
+  , MouseButtonEventData(mouseButtonEventButton, mouseButtonEventMotion)
+  , MouseMotionEventData(mouseMotionEventPos)
+  , Point(P)
+  , V2(..)
+  , V3(..)
+  , V4(..)
+  )
 
 {- projection helpers -}
 v2rry :: (a -> a -> b) -> V2 a -> b
@@ -199,18 +236,23 @@ renderSetup st = do
     [ (progFlat, flatProjection, flatSize, flatPos)
     , (progStar, starProjection, starSize, starPos)
     ] $ \(prog, setProj, setSize, setPos) -> do
-    ul <- getUniformLocation prog "proj"
-    modifyIORef st
-      $ rendererData . setProj
-          .~ flip withArray (glUniformMatrix4fv ul 1 GL_FALSE)
-    ul <- getUniformLocation prog "size"
-    modifyIORef st $ rendererData . setSize .~ glUniform1f ul
-    ul <- getUniformLocation prog "trans"
-    modifyIORef st $ rendererData . setPos .~ glUniform2f ul
-  ul <- getUniformLocation progFlat "color"
-  modifyIORef st $ rendererData . flatColor .~ glUniform4f ul
-  ul <- getUniformLocation progStar "slices"
-  modifyIORef st $ rendererData . starSlices .~ glUniform1i ul . fromIntegral
+    do
+      ul <- getUniformLocation prog "proj"
+      modifyIORef st
+        $ rendererData . setProj
+            .~ flip withArray (glUniformMatrix4fv ul 1 GL_FALSE)
+    do
+      ul <- getUniformLocation prog "size"
+      modifyIORef st $ rendererData . setSize .~ glUniform1f ul
+    do
+      ul <- getUniformLocation prog "trans"
+      modifyIORef st $ rendererData . setPos .~ glUniform2f ul
+  do
+    ul <- getUniformLocation progFlat "color"
+    modifyIORef st $ rendererData . flatColor .~ glUniform4f ul
+  do
+    ul <- getUniformLocation progStar "slices"
+    modifyIORef st $ rendererData . starSlices .~ glUniform1i ul . fromIntegral
   [colbuf, sizebuf] <-
     withArray [0, 0] $ \a -> glGenBuffers 2 a >> peekArray 2 a
   for_ [(starColors, colbuf, 0), (starSizes, sizebuf, 1)] $ \(what, buf, bid) ->
@@ -263,18 +305,20 @@ renderSetup st = do
 renderApp :: V2 Int -> IORef AppState -> IO ()
 renderApp s appst = unRef appst $ renderApp' s
 
-isotropicUnitProjection :: (Fractional f, Integral i) => ([f] -> a) -> V2 i -> a
+isotropicUnitProjection :: Integral i => ([Float] -> a) -> V2 i -> a
 isotropicUnitProjection sp sz = do
-  let V2 sx sy = fromIntegral <$> sz
+  let sx, sy :: Float
+      V2 sx sy = fromIntegral <$> sz
   if sx >= sy
     then let r = sy / sx
           in sp [2 * r, 0, 0, 0, 0, -2, 0, 0, 0, 0, 1, 0, -r, 1, 0, 1]
     else let r = sx / sy
           in sp [2, 0, 0, 0, 0, -2 * r, 0, 0, 0, 0, 1, 0, -1, r, 0, 1]
 
-unprojectIsotropicUnit :: (Fractional f, Integral i) => V2 i -> V2 i -> V2 f
+unprojectIsotropicUnit :: Integral i => V2 i -> V2 i -> V2 Float
 unprojectIsotropicUnit sz pt = do
-  let V2 sx sy = fromIntegral <$> sz
+  let sx, sy, px, py :: Float
+      V2 sx sy = fromIntegral <$> sz
       V2 px py = fromIntegral <$> pt
   if sx >= sy
     then V2 (((px - (sx - sy) / 2) / sy)) (py / sy)
@@ -474,21 +518,21 @@ drawUI _ appst = do
   withWindowOpen "FPS" $ framerate >>= text . pack . show
   withWindowOpen "Features" $ do
     withZoom_ appst showWeights $ checkbox "Scale by weights"
-    withZoom_ appst featureNames $ \r ->
-      withVal_ r
-        $ V.imapM
-        $ \i t ->
-            withRef_ t $ \r ->
-              withID (pack $ show i)
-                . withStyleColor
-                    ImGuiCol_Button
-                    (pure . v4rry ImVec4
-                       $ M.findWithDefault (V4 0.8 0.8 0.8 1.0) i featmap :: IO
-                       ImVec4) $ do
-                whenM (button "    ") . modifyIORef appst
-                  $ hiFeatures %~ runIdentity . S.alterF (pure . not) i
-                sameLine
-                withWidth (-1) $ inputText "" r 100
+    withZoom_ appst featureNames
+      $ flip withVal_
+      $ V.imapM
+      $ \i t ->
+          withRef_ t $ \rfn ->
+            withID (pack $ show i)
+              . withStyleColor
+                  ImGuiCol_Button
+                  (pure . v4rry ImVec4
+                     $ M.findWithDefault (V4 0.8 0.8 0.8 1.0) i featmap :: IO
+                     ImVec4) $ do
+              whenM (button "    ") . modifyIORef appst
+                $ hiFeatures %~ runIdentity . S.alterF (pure . not) i
+              sameLine
+              withWidth (-1) $ inputText "" rfn 100
   withWindowOpen "Groups" $ do
     whenM (button "new group##at begin") . modifyIORef appst
       $ (groupNames %~ V.cons "group")
@@ -512,7 +556,7 @@ drawUI _ appst = do
                   $ hiGroups %~ runIdentity . S.alterF (pure . not) i
               sameLine
               -- TODO the button widths are somewhat WTH
-              withWidth (-12) $ inputText "" r 100
+              void . withWidth (-12) $ inputText "" r 100
               sameLine
               whenM (button "select") $ do
                 modifyIORef appst
@@ -573,19 +617,13 @@ drawUI _ appst = do
     $ do
         --TODO globalize the lows/ups I guess
         --TODO the multilens in the middle is called "alongside"
-        let [flows, fhighs] =
-              map
-                (\f ->
-                   zipWith
-                     (V.zipWith f)
-                     (st ^.. clusters . each . featMeans)
-                     (st ^.. clusters
-                        . each
-                        . featVars
-                        . to (V.map ((4 *) . sqrt))))
-                [(-), (+)]
-            fmins = foldl1' min flows
-            fmaxs = foldl1' max fhighs
+        let extremeWith f =
+              zipWith
+                (V.zipWith f)
+                (st ^.. clusters . each . featMeans)
+                (st ^.. clusters . each . featVars . to (V.map ((4 *) . sqrt)))
+            fmins = foldl1' min $ extremeWith (-)
+            fmaxs = foldl1' max $ extremeWith (+)
             plotData fid gid' =
               let lb = fmins V.! fid
                   rng = fmaxs V.! fid - lb

@@ -2,8 +2,8 @@
 
 module Assets where
 
-import Data.ByteString
-import Data.FileEmbed
+import Data.ByteString (ByteString)
+import Data.FileEmbed (embedFileRelative)
 
 uiFont :: ByteString
 uiFont = $(embedFileRelative "assets/DejaVuSans.ttf")
