@@ -621,9 +621,9 @@ drawUI _ appst = do
               zipWith
                 (V.zipWith f)
                 (st ^.. clusters . each . featMeans)
-                (st ^.. clusters . each . featVars . to (V.map ((4 *) . sqrt)))
-            fmins = foldl1' min $ extremeWith (-)
-            fmaxs = foldl1' max $ extremeWith (+)
+                (st ^.. clusters . each . featVars . to (V.map $ (3 *) . sqrt))
+            fmins = V.zipWith min `foldl1'` extremeWith (-)
+            fmaxs = V.zipWith max `foldl1'` extremeWith (+)
             plotData fid gid' =
               let lb = fmins V.! fid
                   rng = fmaxs V.! fid - lb
