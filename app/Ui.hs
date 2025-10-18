@@ -64,7 +64,8 @@ import SDL
   ( EventPayload(MouseButtonEvent, MouseMotionEvent)
   , InputMotion(Pressed, Released)
   , MouseButton(ButtonLeft)
-  , MouseButtonEventData(mouseButtonEventButton, mouseButtonEventMotion)
+  , MouseButtonEventData(mouseButtonEventButton,
+                     mouseButtonEventMotion)
   , MouseMotionEventData(mouseMotionEventPos)
   , Point(P)
   , V2(..)
@@ -102,9 +103,9 @@ scaleUnscale st =
       (V2 xs ys) = vmax - vmin
       sc = min (1 / xs) (1 / ys) * 0.9 --TODO zoom?
    in ( \cp posx posy ->
-          cp ((posx - vmidx) * sc + 0.5) ((posy - vmidy) * sc + 0.5)
+          cp ((posx - vmidx) * sc + 0.5) ((vmidy - posy) * sc + 0.5)
       , \cs sz -> cs (sz * sc)
-      , \pt -> (pt - pure 0.5) / pure sc + vmid)
+      , \(V2 x y) -> V2 (x - 0.5) (0.5 - y) / pure sc + vmid)
 
 clusterAt :: V2 Float -> AppState -> Maybe Int
 clusterAt pos st =
@@ -617,6 +618,7 @@ drawUI _ appst = do
     $ do
         --TODO globalize the lows/ups I guess
         --TODO the multilens in the middle is called "alongside"
+        --TODO reduce the clusters with 1 cell and 345245 variance
         let extremeWith f =
               zipWith
                 (V.zipWith f)
