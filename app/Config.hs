@@ -209,10 +209,10 @@ processOpts = do
       Right inf -> do
         x <- decodeFile inf
         checkVecSz (inf ++ " groups") nc $ fsClusterGroups x
-        let ngs = length . head $ fsClusterGroups x
-        checkVecSz (inf ++ " groups") nc $ fsClusterGroups x
         checkVecSz (inf ++ " feature names") nd $ fsFeatures x
-        checkVecSz (inf ++ " group names") ngs $ fsGroups x
+        let ngs = length (fsClusterGroups x)
+        unless (and [i >= 0 && i < ngs | is <- fsClusterGroups x, i <- is])
+          $ fail "group index out of range"
         pure x
       Left ao -> do
         fns <-
