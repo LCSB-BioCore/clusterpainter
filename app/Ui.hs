@@ -138,6 +138,11 @@ hsv2rgb h s v a =
     scale = ub - lb
     h6 = h * 6
 
+{- dodgy helper -}
+foldl0' :: (a -> a -> a) -> a -> [a] -> a
+foldl0' _ z [] = z
+foldl0' f _ xs = foldl1' f xs
+
 {- rendering (low-level) -}
 vertexShaderWithCoords :: String
 vertexShaderWithCoords =
@@ -341,20 +346,25 @@ renderApp' sz st = do
       sN = st ^. rendererData . starSlices
       sSzs = st ^. rendererData . starSizes
       sCls = st ^. rendererData . starColors
-      maxWScale = recip . max 1e-3 . maximum $ st ^.. clusters . each . weight
+      maxWScale =
+        recip . maximum . (1e-3 :)
+          $ st ^.. clusters . each . filtered (^. clusterVisible) . weight
   {- selection painting -}
   setupProgram rdFlatProgram flatProjection
   fSz 0.56
   fCl 0.222 0.222 0.222 1
-  for_ (st ^.. clusters . to V.toList . each) $ \c ->
-    when (c ^. clusterSelected) $ do
-      v2rry fPos $ c ^. position
-      glDrawArrays GL_TRIANGLE_STRIP 0 4
+  for_ (st ^.. clusters . to V.toList . each . filtered (^. clusterSelected)) $ \c -> do
+    v2rry fPos $ c ^. position
+    glDrawArrays GL_TRIANGLE_STRIP 0 4
   {- cluster painting helpers -}
   let (featmap, groupmap) = featureGroupColors st id
       nFeats = M.size featmap
       nGroups = M.size groupmap
-      franges = st ^. featureRanges
+      featVals =
+        st ^.. clusters . each . filtered (^. clusterVisible) . features
+      featureMins = foldl0' (V.zipWith min) (pure 0) featVals
+      featureMaxs = foldl0' (V.zipWith max) (pure 1) featVals
+      franges = V.zipWith V2 featureMins (V.zipWith (-) featureMaxs featureMins)
       wScale c =
         if (st ^. showWeights)
           then sqrt $ maxWScale * (c ^. weight)
@@ -364,7 +374,7 @@ renderApp' sz st = do
     setupProgram rdStarProgram starProjection
     sN nGroups
     sCls (M.elems groupmap)
-    for_ (st ^.. clusters . each) $ \c -> do
+    for_ (st ^.. clusters . each . filtered (^. clusterVisible)) $ \c -> do
       v2rry sPos $ c ^. position
       sSz $ wScale c * 0.4 + 0.08
       sSzs . map (\gid -> c ^. groups . to (bool 0 1 . S.member gid))
@@ -372,7 +382,7 @@ renderApp' sz st = do
       glDrawArrays GL_TRIANGLE_STRIP 0 4
   {- sleepwalk background -}
   setupProgram rdFlatProgram flatProjection
-  for_ (st ^.. clusters . each) $ \c -> do
+  for_ (st ^.. clusters . each . filtered (^. clusterVisible)) $ \c -> do
     fSz $ wScale c * 0.4
     v2rry fPos $ c ^. position
     let clr =
@@ -390,14 +400,16 @@ renderApp' sz st = do
     setupProgram rdStarProgram starProjection
     sN nFeats
     sCls (M.elems featmap)
-    for_ (st ^.. clusters . each) $ \c -> do
+    for_ (st ^.. clusters . each . filtered (^. clusterVisible)) $ \c -> do
       v2rry sPos $ c ^. position
       sSz $ wScale c * 0.35
       sSzs
         . map
             (\fid ->
                let (V2 fmin frng) = franges V.! fid
-                in sqrt $ ((c ^. features . to (V.! fid) - fmin) / frng))
+                in if frng < 1e-6
+                     then 1
+                     else sqrt $ ((c ^. features . to (V.! fid) - fmin) / frng))
         $ M.keys featmap
       glDrawArrays GL_TRIANGLE_STRIP 0 4
 
@@ -542,6 +554,11 @@ drawUI _ appst = do
     when (st ^. syncOutFile . to isJust) $ do
       sameLine
       whenM (button "export to file") $ doOutput st
+    whenM (button "set clip") . modifyIORef appst . (clusters . each %~) $ \c ->
+      c & clusterVisible .~ (c ^. clusterSelected)
+    sameLine
+    whenM (button "unset clip") . modifyIORef appst . (clusters . each %~)
+      $ clusterVisible .~ True
     todel <-
       withRef_ Nothing $ \todel -> do
         withZoom appst groupNames . flip withVal_ . V.imapM $ \i t ->
@@ -622,19 +639,27 @@ drawUI _ appst = do
         let extremeWith f =
               zipWith
                 (V.zipWith f)
-                (st ^.. clusters . each . featMeans)
-                (st ^.. clusters . each . featVars . to (V.map $ (3 *) . sqrt))
-            fmins = V.zipWith min `foldl1'` extremeWith (-)
-            fmaxs = V.zipWith max `foldl1'` extremeWith (+)
+                (st ^.. clusters
+                   . each
+                   . filtered (^. clusterVisible)
+                   . featMeans)
+                (st ^.. clusters
+                   . each
+                   . filtered (^. clusterVisible)
+                   . featVars
+                   . to (V.map $ (2 *) . sqrt))
+            fmins = foldl0' (V.zipWith min) (pure 0) $ extremeWith (-)
+            fmaxs = foldl0' (V.zipWith max) (pure 1) $ extremeWith (+)
             plotData fid gid' =
               let lb = fmins V.! fid
-                  rng = fmaxs V.! fid - lb
+                  rng = max 1e-3 $ fmaxs V.! fid - lb
                   xs = map ((+ lb) . (* rng)) [0,0.05 .. 1]
                   gaussContrib x m v w = w * exp (errorDist x m / negate v)
                   contribAt x =
                     sum
                       $ st ^.. clusters
                           . each
+                          . filtered (^. clusterVisible)
                           . filtered
                               (case gid' of
                                  Just gid -> (^. groups . to (S.member gid))

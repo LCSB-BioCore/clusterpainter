@@ -13,7 +13,7 @@ import Options.Applicative
 
 import Control.Monad (unless)
 import Data.Aeson (FromJSON, ToJSON, eitherDecodeFileStrict)
-import Data.List (foldl', foldl1')
+import Data.List (foldl')
 import Data.Version (showVersion)
 import DearImGui.Internal.Text (pack)
 import GHC.Generics (Generic)
@@ -242,9 +242,7 @@ processOpts = do
                   checkGroups = filter $ liftA2 (&&) (>= 0) (< ngs)
               pure (gns, map checkGroups gs)
         pure FSt {fsClusterGroups = gs, fsFeatures = fns, fsGroups = gns}
-  let featureMins = foldl1' (zipWith min) fs
-      featureMaxs = foldl1' (zipWith max) fs
-      inf = 1 / 0 :: Float
+  let inf = 1 / 0 :: Float
       posRng =
         foldl'
           (\(l, u) p -> (liftA2 min l p, liftA2 max u p))
@@ -258,9 +256,6 @@ processOpts = do
       , _clusters =
           V.fromList
             $ zipClusters projs topos ws fs ms vs (fsClusterGroups filestate)
-      , _featureRanges =
-          V.fromList
-            $ zipWith V2 featureMins (zipWith (-) featureMaxs featureMins)
       , _positionRange = posRng
       , _fontSize = uiFontSize o
       }

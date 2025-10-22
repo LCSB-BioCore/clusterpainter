@@ -30,7 +30,6 @@ data AppState = St
   , _syncOutFile :: Maybe FilePath
   , _hiFeatures :: S.Set Int
   , _hiGroups :: S.Set Int
-  , _featureRanges :: Ve (V2 Float)
   , _positionRange :: (V2 Float, V2 Float)
   , _rendererData :: RendererData
   , _painting :: Maybe Bool
@@ -58,7 +57,6 @@ emptySt =
     , _syncOutFile = Nothing
     , _hiFeatures = S.empty
     , _hiGroups = S.empty
-    , _featureRanges = V.empty
     , _positionRange = (V2 0 0, V2 0 0)
     , _rendererData = emptyRD
     , _painting = Nothing
@@ -115,6 +113,7 @@ data Cluster = Cluster
   , _featMeans :: Ve Float
   , _featVars :: Ve Float
   , _clusterSelected :: Bool
+  , _clusterVisible :: Bool
   , _groups :: S.Set Int
   } deriving (Show)
 
@@ -128,6 +127,7 @@ emptyCluster =
     , _featMeans = V.empty
     , _featVars = V.empty
     , _clusterSelected = False
+    , _clusterVisible = True
     , _groups = S.empty
     }
 

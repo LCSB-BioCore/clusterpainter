@@ -38,8 +38,9 @@ import Graphics.GL
   )
 import SDL
   ( Event(eventPayload)
-  , EventPayload(KeyboardEvent, MouseButtonEvent, MouseMotionEvent, MouseWheelEvent,
-                 QuitEvent, TextEditingEvent, TextInputEvent, WindowResizedEvent)
+  , EventPayload(KeyboardEvent, MouseButtonEvent, MouseMotionEvent,
+             MouseWheelEvent, QuitEvent, TextEditingEvent, TextInputEvent,
+             WindowResizedEvent)
   , Mode(Normal)
   , OpenGLConfig(glProfile)
   , Profile(Core)
