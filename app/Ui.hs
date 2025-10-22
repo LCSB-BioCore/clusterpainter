@@ -678,7 +678,7 @@ drawUI _ appst = do
             text (st ^. featureNames . to (V.! fid))
             sameLine
             colorMarker (featmap M.! fid)
-        when (or $ st ^.. clusters . each . clusterSelected) $ do
+        when (orOf (clusters . each . clusterSelected) st) $ do
           tableNextRow
           tableNextColumn $ text "Selection"
           for_ (st ^. hiFeatures . to S.toAscList) $ \fid ->
